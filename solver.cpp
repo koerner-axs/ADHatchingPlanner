@@ -29,12 +29,13 @@ using vvi = vector<vector<int>>;
 // using oset = tree<int,null_type,less<int>,rb_tree_tag,tree_order_statistics_node_update>;
 
 const int maxsize = 4096;
-const int maxjumpdist = 75;
+const int maxjumpdist = 300;
 const int minjumpdist = 20;
 const int timeout = 5;
+const int farjumpdepth = 3;
 
 int tocover[maxsize][maxsize];
-int keepout[maxsize][maxsize];
+int canfarjump[maxsize][maxsize];
 vector<vector<pii>> offsets;
 
 void build_offsets(int min, int max) {
@@ -43,13 +44,36 @@ void build_offsets(int min, int max) {
         rep(j,-i,i+1) vec.pb({-i, j}), vec.pb({i, j});
         rep(j,-i+1,i) vec.pb({j, -i}), vec.pb({j, i});
         offsets.pb(vec);
-        cout << vec.size() << " ";
+        //cout << vec.size() << " ";
     }
-    cout << endl;
+    //cout << endl;
+}
+
+void build_canfarjump() {
+    const int thresh = (2*farjumpdepth+1)*(2*farjumpdepth+1);
+    for (int y = farjumpdepth; y < maxsize - farjumpdepth; y++) {
+        vi colcount(maxsize, 0);
+        int var = 0;
+        for (int i = 0; i <= farjumpdepth*2; i++) {
+            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
+                colcount[i] += tocover[i][y+j];
+            }
+            var += colcount[i];
+        }
+        canfarjump[farjumpdepth][y] = var;// >= thresh;
+        for (int x = farjumpdepth+1; x < maxsize - farjumpdepth; x++) {
+            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
+                colcount[x+farjumpdepth] += tocover[x+farjumpdepth][y+j];
+            }
+            var += colcount[x+farjumpdepth] - colcount[x-farjumpdepth-1];
+            canfarjump[x][y] = var;// >= thresh;
+        }
+    }
 }
 
 pii sample() {
-    int dist = rand() % (maxjumpdist - minjumpdist + 1);
+    //int dist = rand() % (maxjumpdist - minjumpdist + 1);
+    int dist = minjumpdist;
     //cout << offsets[dist].size() << " " << ((dist+minjumpdist)*8) << endl;
     return {dist, rand() % ((dist+minjumpdist)*8)};
 }
@@ -58,22 +82,115 @@ bool insiderect(pii point, pair<pii, pii> rect) {
     return point.fi >= rect.fi.fi && point.fi <= rect.se.fi && point.se >= rect.fi.se && point.se <= rect.se.se;
 }
 
-bool isallowed(pii point, int iteration) {
-    if (keepout[point.fi][point.se] == 0 || iteration <= keepout[point.fi][point.se])
-        return true;
-    return iteration - keepout[point.fi][point.se] >= timeout;
+bool isallowed(pii point, int iteration, vector<pii>& steps) {
+    for (int offset = 1; offset <= timeout; offset++) {
+        int idx = (int)steps.size() - offset;
+        if (idx < 0)
+            break;
+        pii p = steps[idx];
+        //cout << idx << " " << p.fi << " " << p.se << endl;
+        if (insiderect(point, {{p.fi - minjumpdist + 1, p.se - minjumpdist + 1}, {p.fi + minjumpdist - 1, p.se + minjumpdist - 1}}))
+            return false;
+    }
+    return true;
 }
 
-void mark_keepout(pii point, int iteration) {
-    int left = max(1, point.fi - minjumpdist + 1);
-    int right = min(maxsize, point.fi + minjumpdist - 1);
-    int top = max(1, point.se - minjumpdist + 1);
-    int bottom = min(maxsize, point.se + minjumpdist - 1);
-    rep(i,left,right+1) {
-        rep(j,top,bottom+1) {
-            keepout[i][j] = iteration;
+struct Statistics {
+    int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
+    int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
+};
+
+class Board {
+private:
+    int cell_state[maxsize][maxsize];
+    int cell_allow_farjump[maxsize][maxsize];
+    pair<int, int> size;
+public:
+    int minjumpdist, maxjumpdist, farjumpdepth;
+    Statistics statistics;
+private:
+    void _build_farjump();
+    long long _compute_max_time_phase_one();
+    long long _compute_max_time_phase_two();
+    vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
+    vector<pair<int, int>> _build_tranche_phase_two(vector<pair<int, int>>& carry_forward);
+public:
+    Board(int minjumpdist, int maxjumpdist, int farjumpdepth);
+    vector<pair<int, int>> solve();
+}
+
+
+Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), farjumpdepth(fjd) {
+    // Read board size
+    cin >> size.fi >> size.se;
+
+    // Read board
+    statistics.initial_num_targets = 0;
+    for (int i = 1; i <= sy; i++) {
+        for (int j = 1; j <= sy; j++) {
+            char c;
+            cin >> c;
+            if (c == '1') {
+                cell_state[i][j] = 1;
+                statistics_initial_num_targets++;
+            }
         }
     }
+    statistics.current_num_targets = statistics.initial_num_targets;
+
+    // Calculate the number of target cells in a neighborhood of given size for all cells.
+    // If all cells in a neighborhood are target cells, we assume the center cell to be an
+    // acceptable target for a long jump.
+    _build_farjump();
+}
+
+
+Board::_build_farjump() {
+    statistics.initial_num_targets_longjump = 0;
+
+    int thresh = (2*farjumpdepth+1)*(2*farjumpdepth+1);
+    for (int y = farjumpdepth; y < maxsize - farjumpdepth; y++) {
+        vi colcount(maxsize, 0);
+        int var = 0;
+        for (int i = 0; i <= farjumpdepth*2; i++) {
+            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
+                colcount[i] += tocover[i][y+j];
+            }
+            var += colcount[i];
+        }
+        canfarjump[farjumpdepth][y] = var;
+        if (var >= thresh)
+            statistics.initial_num_targets_longjump++;
+        for (int x = farjumpdepth+1; x < maxsize - farjumpdepth; x++) {
+            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
+                colcount[x+farjumpdepth] += tocover[x+farjumpdepth][y+j];
+            }
+            var += colcount[x+farjumpdepth] - colcount[x-farjumpdepth-1];
+            canfarjump[x][y] = var;
+            if (var >= thresh)
+                statistics.initial_num_targets_longjump++;
+        }
+    }
+
+    statistics.initial_num_targets_nonlongjump = statistics.initial_num_targets - statistics.initial_num_targets_longjump;
+    statistics.current_num_targets_longjump = statistics.initial_num_targets_longjump;
+    statistics.current_num_targets_nonlongjump = statistics.initial_num_targets_nonlongjump;
+}
+
+
+long long Board::_compute_max_time_phase_one() {
+    return 
+}
+
+
+vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& carry_forward) {
+    vector<pair<int, int>> tranche;
+    long long calc_time = 0;
+    const long long max_time_spent = _compute_max_time_phase_one();
+    while (calc_time < max_time_spent) {
+        /* code */
+    }
+    return tranche;
 }
 
 
@@ -97,8 +214,9 @@ int main() {
     int countzeros = sx * sy - countones;
     double fillratio = countones / (double)(sx * sy);
     build_offsets(minjumpdist, maxjumpdist);
+    build_canfarjump();
 
-    cout << countones << " " << countzeros << " " << fillratio << endl;
+    //cout << countones << " " << countzeros << " " << fillratio << endl;
 
     // rep(i,0,2) {
     //     rep(j,0,offsets[i].size()) {
@@ -110,6 +228,7 @@ int main() {
 
 
     deque<pii> last_sites;
+    vector<vector<pii>> tranches;
     vector<pii> steps;
     pii currentpos;
     rep(i,0,sx) {
@@ -125,17 +244,17 @@ int main() {
     int tries = 0;
     int maxtries = ((2*maxjumpdist-1)*(2*maxjumpdist-1) - (2*minjumpdist-1)*(2*minjumpdist-1)) * 16;
     const double resetfactor = 0.99;
-    while (iteration <= countones*0.25) {//countones) {
+    while (iteration <= 200000) {//countones*0.85) {//countones) {
         pii s = sample();
         s = offsets[s.fi][s.se];
         pii probe = {currentpos.fi + s.fi, currentpos.se + s.se};
         tries++;
         if (insiderect(probe, {{1, 1}, {sx, sy}}) && tocover[probe.fi][probe.se]) {
             tries += 8;
-            if (isallowed(probe, iteration)) {
+            if (isallowed(probe, iteration, steps)) {
                 steps.pb(probe);
                 //last_sites.pb(probe);
-                mark_keepout(probe, iteration);
+                //mark_keepout(probe, iteration);
                 tocover[probe.fi][probe.se] = 0;
                 currentpos = probe;
                 iteration++;
@@ -169,6 +288,7 @@ int main() {
     rep(i,1,sx+1) {
         rep(j,1,sy+1) {
             cout << tocover[i][j] << " ";
+            //cout << (tocover[i][j] + canfarjump[i][j]) << " ";
         }
         cout << endl;
     }

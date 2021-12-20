@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 
 
-directory = Path('X:/Caro')
+directory = Path('.')
 
 for file in directory.glob('inputs/*.png'):
 	try:

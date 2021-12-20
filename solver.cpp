@@ -98,6 +98,8 @@ bool isallowed(pii point, int iteration, vector<pii>& steps) {
 struct Statistics {
     int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
     int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
+    int phase_one_num_tranches, phase_one_num_tranche_disappointees, phase_one_num_tranches_in_avg;
+    double phase_one_avg_tranche_size;
 };
 
 class Board {
@@ -110,6 +112,10 @@ public:
     Statistics statistics;
 private:
     void _build_farjump();
+    void _init_statistics();
+    void _declare_end_of_phase(int phase_to_end);
+    void _update_stats_phase_one_tranche(vector<pair<int, int>> tranche&);
+    void _update_stats_phase_two_tranche(vector<pair<int, int>> tranche&);
     long long _compute_max_time_phase_one();
     long long _compute_max_time_phase_two();
     vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
@@ -123,6 +129,8 @@ public:
 Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), farjumpdepth(fjd) {
     // Read board size
     cin >> size.fi >> size.se;
+
+    _init_statistics();
 
     // Read board
     statistics.initial_num_targets = 0;
@@ -178,6 +186,41 @@ Board::_build_farjump() {
 }
 
 
+void Board::_init_statistics() {
+    statistics.initial_num_targets = statistics.initial_num_targets_longjump = statistics.initial_num_targets_nonlongjump = 0;
+    statistics.current_num_targets = statistics.current_num_targets_longjump = statistics.current_num_targets_nonlongjump = 0;
+    statistics.phase_one_num_tranches = statistics.phase_one_num_tranche_disappointees = 0;
+    statistics.phase_one_num_tranches_in_avg = 0;
+    statistics.phase_one_avg_tranche_size = 0.0;
+}
+
+
+void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
+    statistics.phase_one_num_tranches++;
+
+    // Check if new tranche is of underwhelming size compared to running average. If so add one to number of consecutive disappointing
+    // tranches. If that count exceeds a threshold, phase one is declared to have ended.
+    bool did_disappoint = false;
+    if (statistics.phase_one_num_tranches_in_avg > 5) { // Need to have a min number of components so that average is stable enough
+        const double min_no_disappoint = 0.4; // Constant depends on the variability to be expected
+        if ((double)tranche.size() < min_no_disappoint * statistics.phase_one_avg_tranche_size) {
+            did_disappoint = true;
+            statistics.phase_one_num_tranche_disappointees++;
+        }
+        const int max_allowed_disappoint = 5;
+        if (statistics.phase_one_num_tranche_disappointees > max_allowed_disappoint) {
+            _declare_end_of_phase(1);
+        }
+    }
+
+    if (!did_disappoint) { 
+        statistics.phase_one_avg_tranche_size = statistics.phase_one_avg_tranche_size * statistics.phase_one_num_tranches_in_avg + (double)tranche.size();
+        statistics.phase_one_avg_tranche_size /= (double)(statistics.phase_one_num_tranches_in_avg + 1);
+        statistics.phase_one_num_tranches_in_avg++;
+    }
+}
+
+
 long long Board::_compute_max_time_phase_one() {
     return 
 }
@@ -190,6 +233,7 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
     while (calc_time < max_time_spent) {
         /* code */
     }
+    _update_stats_phase_one_tranche(tranche);
     return tranche;
 }
 

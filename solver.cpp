@@ -34,6 +34,7 @@ const int minjumpdist = 20;
 const int timeout = 5;
 const int farjumpdepth = 3;
 
+/*
 int tocover[maxsize][maxsize];
 int canfarjump[maxsize][maxsize];
 vector<vector<pii>> offsets;
@@ -94,6 +95,7 @@ bool isallowed(pii point, int iteration, vector<pii>& steps) {
     }
     return true;
 }
+*/
 
 struct Statistics {
     int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
@@ -107,6 +109,7 @@ private:
     int cell_state[maxsize][maxsize];
     int cell_allow_farjump[maxsize][maxsize];
     pair<int, int> size;
+    int farjump_threshold;
 public:
     int minjumpdist, maxjumpdist, farjumpdepth;
     Statistics statistics;
@@ -114,8 +117,8 @@ private:
     void _build_farjump();
     void _init_statistics();
     void _declare_end_of_phase(int phase_to_end);
-    void _update_stats_phase_one_tranche(vector<pair<int, int>> tranche&);
-    void _update_stats_phase_two_tranche(vector<pair<int, int>> tranche&);
+    void _update_stats_phase_one_tranche(vector<pair<int, int>>& tranche);
+    void _update_stats_phase_two_tranche(vector<pair<int, int>>& tranche);
     long long _compute_max_time_phase_one();
     long long _compute_max_time_phase_two();
     vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
@@ -123,7 +126,7 @@ private:
 public:
     Board(int minjumpdist, int maxjumpdist, int farjumpdepth);
     vector<pair<int, int>> solve();
-}
+};
 
 
 Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), farjumpdepth(fjd) {
@@ -134,13 +137,13 @@ Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), fa
 
     // Read board
     statistics.initial_num_targets = 0;
-    for (int i = 1; i <= sy; i++) {
-        for (int j = 1; j <= sy; j++) {
+    for (int i = 1; i <= size.fi; i++) {
+        for (int j = 1; j <= size.se; j++) {
             char c;
             cin >> c;
             if (c == '1') {
                 cell_state[i][j] = 1;
-                statistics_initial_num_targets++;
+                statistics.initial_num_targets++;
             }
         }
     }
@@ -153,29 +156,34 @@ Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), fa
 }
 
 
-Board::_build_farjump() {
+vector<pair<int, int>> Board::solve() {
+    return {};
+}
+
+
+void Board::_build_farjump() {
     statistics.initial_num_targets_longjump = 0;
 
-    int thresh = (2*farjumpdepth+1)*(2*farjumpdepth+1);
+    farjump_threshold = (2*farjumpdepth+1)*(2*farjumpdepth+1);
     for (int y = farjumpdepth; y < maxsize - farjumpdepth; y++) {
         vi colcount(maxsize, 0);
         int var = 0;
         for (int i = 0; i <= farjumpdepth*2; i++) {
             for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[i] += tocover[i][y+j];
+                colcount[i] += cell_state[i][y+j];
             }
             var += colcount[i];
         }
-        canfarjump[farjumpdepth][y] = var;
-        if (var >= thresh)
+        cell_allow_farjump[farjumpdepth][y] = var;
+        if (var >= farjump_threshold)
             statistics.initial_num_targets_longjump++;
         for (int x = farjumpdepth+1; x < maxsize - farjumpdepth; x++) {
             for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[x+farjumpdepth] += tocover[x+farjumpdepth][y+j];
+                colcount[x+farjumpdepth] += cell_state[x+farjumpdepth][y+j];
             }
             var += colcount[x+farjumpdepth] - colcount[x-farjumpdepth-1];
-            canfarjump[x][y] = var;
-            if (var >= thresh)
+            cell_allow_farjump[x][y] = var;
+            if (var >= farjump_threshold)
                 statistics.initial_num_targets_longjump++;
         }
     }
@@ -192,6 +200,13 @@ void Board::_init_statistics() {
     statistics.phase_one_num_tranches = statistics.phase_one_num_tranche_disappointees = 0;
     statistics.phase_one_num_tranches_in_avg = 0;
     statistics.phase_one_avg_tranche_size = 0.0;
+}
+
+
+void Board::_declare_end_of_phase(int phase_to_end) {
+    cout << "End of phase " << phase_to_end << endl;
+    cout << "Exiting..." << endl;
+    exit(0);
 }
 
 
@@ -218,11 +233,37 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
         statistics.phase_one_avg_tranche_size /= (double)(statistics.phase_one_num_tranches_in_avg + 1);
         statistics.phase_one_num_tranches_in_avg++;
     }
+
+    // Update longjump and nonlongjump statistics
+    for (pair<int, int> p : tranche) {
+        if (cell_allow_farjump[p.fi][p.se] >= farjump_threshold) {
+            statistics.current_num_targets_longjump--;
+        } else {
+            statistics.current_num_targets_nonlongjump--;
+        }
+    }
 }
 
 
 long long Board::_compute_max_time_phase_one() {
-    return 
+    long long base_time_per_cell = 2 * ((2*maxjumpdist+1)*(2*maxjumpdist+1) - (2*minjumpdist+1)*(2*minjumpdist+1));
+    double proportion_border_covered = statistics.current_num_targets_nonlongjump / (double)statistics.initial_num_targets_nonlongjump;
+    
+    if (statistics.phase_one_num_tranches_in_avg >= 5) {
+        if (proportion_border_covered < 0.7) {
+            return statistics.phase_one_avg_tranche_size * base_time_per_cell;
+        } else if (proportion_border_covered < 0.9) {
+            return statistics.phase_one_avg_tranche_size * base_time_per_cell * 4;
+        } else {
+            return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
+        }
+    } else {
+        if (proportion_border_covered < 0.9) {
+            return statistics.current_num_targets_nonlongjump * base_time_per_cell;
+        } else {
+            return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
+        }
+    }
 }
 
 
@@ -241,11 +282,12 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
 int main() {
     FIO;
 
+    /*
     int sx, sy;
     cin >> sx >> sy;
 
     int countones = 0;
-    for (int i = 1; i <= sy; i++) {
+    for (int i = 1; i <= sx; i++) {
         for (int j = 1; j <= sy; j++) {
             char c;
             cin >> c;
@@ -259,6 +301,7 @@ int main() {
     double fillratio = countones / (double)(sx * sy);
     build_offsets(minjumpdist, maxjumpdist);
     build_canfarjump();
+    */
 
     //cout << countones << " " << countzeros << " " << fillratio << endl;
 
@@ -270,7 +313,7 @@ int main() {
     // }
     // return 0;
 
-
+    /*
     deque<pii> last_sites;
     vector<vector<pii>> tranches;
     vector<pii> steps;
@@ -318,7 +361,9 @@ int main() {
             tries = 0;
         }
     }
+    */
 
+    /*
     cout << endl;
     cout << endl;
     cout << endl;
@@ -338,7 +383,7 @@ int main() {
     }
 
     //vector<cluster> clusters;
-
+    */
 
     return 0;
 }

@@ -169,6 +169,7 @@ public:
     void solve();
     void print_solution_path();
     void print_board();
+    void print_statistics();
 };
 
 
@@ -209,6 +210,7 @@ void Board::solve() {
     int num_tranches = 0;
     while (true) {
         cout << "Tranche number " << (++num_tranches) << endl;
+        print_statistics();
 
         vector<pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
         solution.insert(solution.end(), tranche.begin(), tranche.end());
@@ -239,6 +241,22 @@ void Board::print_board() {
         }
         cout << endl;
     }
+}
+
+/*
+int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
+    int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
+    int phase_one_num_tranches, phase_one_num_tranche_disappointees, phase_one_num_tranches_in_avg;
+    double phase_one_avg_tranche_size;*/
+
+#define PRINT_NUM_AND_PERCENTOF(a,b) a << " (" << setprecision(2) << (100 * (a / (double)b)) << "%)"
+void Board::print_statistics() {
+    int area = size.fi * size.se;
+    cout << "Current statistics:" << endl;
+    cout << "Size of board: (" << size.fi << " x " << size.se << ")" << endl;
+    cout << "Of which " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets, area) << " cells are targets" << endl;
+    cout << "   of which " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets_longjump, statistics.current_num_targets) << " are eligible for a long jump, whereas " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets_nonlongjump, statistics.current_num_targets) << " are not" << endl;
+    cout << "to be extended" << endl;
 }
 
 
@@ -327,9 +345,12 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
 
 
 long long Board::_compute_max_time_phase_one() {
-    long long base_time_per_cell = 2 * ((2*maxjumpdist+1)*(2*maxjumpdist+1) - (2*minjumpdist+1)*(2*minjumpdist+1));
-    double proportion_border_covered = statistics.current_num_targets_nonlongjump / (double)statistics.initial_num_targets_nonlongjump;
+    //long long base_time_per_cell = 2 * ((2*maxjumpdist+1)*(2*maxjumpdist+1) - (2*minjumpdist+1)*(2*minjumpdist+1));
+    long long base_time_per_cell = 4 * (8*minjumpdist - 4);
+    double proportion_border_covered = 1.0 - (statistics.current_num_targets_nonlongjump / (double)statistics.initial_num_targets_nonlongjump);
     
+    //cout << base_time_per_cell << " " << proportion_border_covered << endl;
+
     if (statistics.phase_one_num_tranches_in_avg >= 5) {
         if (proportion_border_covered < 0.7) {
             return statistics.phase_one_avg_tranche_size * base_time_per_cell;
@@ -364,6 +385,8 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
         }
     }
     tranche.push_back(currentpos);
+
+    //cout << max_time_spent << endl;
 
     while (calc_time < max_time_spent) {
 

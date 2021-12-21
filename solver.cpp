@@ -87,8 +87,8 @@ bool isallowed(pii point, int iteration, vector<pii>& steps) {
 */
 
 pii sample(int minjumpdist, int maxjumpdist) {
-    //int dist = rand() % (maxjumpdist - minjumpdist + 1);
-    int dist = minjumpdist;
+    int dist = rand() % (maxjumpdist - minjumpdist + 1);
+    //int dist = minjumpdist;
     //cout << offsets[dist].size() << " " << ((dist+minjumpdist)*8) << endl;
     return {dist, rand() % ((dist+minjumpdist)*8)};
 }
@@ -150,6 +150,7 @@ private:
     int cell_allow_farjump[MAXSIZE][MAXSIZE];
     pair<int, int> size;
     int farjump_threshold;
+    int current_phase;
 public:
     int minjumpdist, maxjumpdist, farjumpdepth, cooldown;
     vector<pair<int, int>> solution;
@@ -204,16 +205,23 @@ Board::Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time
 
 void Board::solve() {
     solution.clear();
+    current_phase = 1;
 
     // Phase one
     vector<pair<int, int>> carry_forward; // List of cells that need to cool down first
     int num_tranches = 0;
-    while (true) {
+    while (current_phase == 1) {
         cout << "Tranche number " << (++num_tranches) << endl;
         print_statistics();
 
         vector<pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
         solution.insert(solution.end(), tranche.begin(), tranche.end());
+
+
+        //print_solution_path();
+        //print_board();
+        //exit(0);
+
         
         // Remember the last 'cooldown' many cells
         carry_forward.clear();
@@ -221,6 +229,12 @@ void Board::solve() {
             carry_forward.push_back(solution[idx]);
         }
     }
+
+    // Phase two
+
+    //cout << ((int)solution.size()) << endl;
+    //exit(0);
+    return;
 }
 
 
@@ -249,7 +263,7 @@ int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlo
     int phase_one_num_tranches, phase_one_num_tranche_disappointees, phase_one_num_tranches_in_avg;
     double phase_one_avg_tranche_size;*/
 
-#define PRINT_NUM_AND_PERCENTOF(a,b) a << " (" << setprecision(2) << (100 * (a / (double)b)) << "%)"
+#define PRINT_NUM_AND_PERCENTOF(a,b) a << " (" << /*setprecision(2) <<*/ (100 * (a / (double)b)) << "%)"
 void Board::print_statistics() {
     int area = size.fi * size.se;
     cout << "Current statistics:" << endl;
@@ -304,8 +318,9 @@ void Board::_init_statistics() {
 
 void Board::_declare_end_of_phase(int phase_to_end) {
     cout << "End of phase " << phase_to_end << endl;
-    cout << "Exiting..." << endl;
-    exit(0);
+    current_phase = phase_to_end + 1;
+    //cout << "Exiting..." << endl;
+    //exit(0);
 }
 
 
@@ -321,13 +336,14 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
             did_disappoint = true;
             statistics.phase_one_num_tranche_disappointees++;
         }
-        const int max_allowed_disappoint = 5;
+        const int max_allowed_disappoint = 10;
         if (statistics.phase_one_num_tranche_disappointees > max_allowed_disappoint) {
             _declare_end_of_phase(1);
         }
     }
 
     if (!did_disappoint) { 
+        statistics.phase_one_num_tranche_disappointees = max(0, statistics.phase_one_num_tranche_disappointees - 1);
         statistics.phase_one_avg_tranche_size = statistics.phase_one_avg_tranche_size * statistics.phase_one_num_tranches_in_avg + (double)tranche.size();
         statistics.phase_one_avg_tranche_size /= (double)(statistics.phase_one_num_tranches_in_avg + 1);
         statistics.phase_one_num_tranches_in_avg++;
@@ -341,6 +357,43 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
             statistics.current_num_targets_nonlongjump--;
         }
     }
+
+    /*
+    set<pair<int, int>> s;
+    pair<int, int> x;
+    for (pair<int, int> p : tranche) {
+        if (s.count(p)) {
+            cout << "Point (" << p.fi << " " << p.se << ") was doubled" << endl;
+            x = p;
+        } else
+        s.insert(p);
+    }
+    for (int idx = 0; idx < (int)tranche.size(); idx++) {
+        if (tranche[idx] == x) {
+            cout << "Doubling occured at index " << idx << endl;
+            break;
+        }
+    }
+
+    int lj = 0;
+    int nlj = 0;
+    rep(i,1,size.fi+1)
+        rep(j,1,size.se+1) {
+            if (cell_state[i][j]) {
+                if (cell_allow_farjump[i][j] >= farjump_threshold)
+                    lj++;
+                else
+                    nlj++;
+            }
+        }
+    if (statistics.current_num_targets_longjump != lj || statistics.current_num_targets_nonlongjump != nlj) {
+        print_statistics();
+        cout << "Length of tranche " << ((int)tranche.size()) << endl;
+        cout << "Longjump targets mismatched " << statistics.current_num_targets_longjump << " compared to " << lj << endl;
+        cout << "Nonlongjump targets mismatched " << statistics.current_num_targets_nonlongjump << " compared to " << nlj << endl;
+        exit(0);
+    }
+    */
 }
 
 
@@ -351,11 +404,18 @@ long long Board::_compute_max_time_phase_one() {
     
     //cout << base_time_per_cell << " " << proportion_border_covered << endl;
 
+    /*if (statistics.phase_one_num_tranches_in_avg >= 5) {
+        return min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell;
+    } else {
+        return statistics.current_num_targets_nonlongjump * base_time_per_cell;
+    }*/
+
+    
     if (statistics.phase_one_num_tranches_in_avg >= 5) {
         if (proportion_border_covered < 0.7) {
-            return statistics.phase_one_avg_tranche_size * base_time_per_cell;
+            return min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell;
         } else if (proportion_border_covered < 0.9) {
-            return statistics.phase_one_avg_tranche_size * base_time_per_cell * 4;
+            return min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell * 4;
         } else {
             return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
         }
@@ -366,6 +426,7 @@ long long Board::_compute_max_time_phase_one() {
             return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
         }
     }
+    
 }
 
 
@@ -373,21 +434,44 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
     vector<pair<int, int>> tranche;
     long long calc_time = 0;
     const long long max_time_spent = _compute_max_time_phase_one();
-    //const double resetfactor = 0.99;
     
-    pii currentpos;
-    for (int i = 1; i <= size.fi; i++) {
+    pii currentpos = {-1, -1};
+    /*for (int i = 1; i <= size.fi; i++) {
         for (int j = 1; j <= size.se; j++) {
             if (cell_state[i][j]) {
-                currentpos = {i+1,j+1};
+                currentpos = {i,j};
                 break;
             }
         }
+    }*/
+    int row = rand() % size.fi;
+    int col = rand() % size.se;
+    while (currentpos.fi == -1) {
+        for (int i = col; i < size.se; i++) {
+            if (cell_state[row+1][i+1]) {
+                currentpos = {row+1, i+1};
+                break;
+            }
+        }
+        if (currentpos.fi == -1) {
+            for (int i = 0; i < col; i++) {
+                if (cell_state[row+1][i+1]) {
+                    currentpos = {row+1, i+1};
+                    break;
+                }
+            }
+        }
+        row = (row + 1) % size.fi;
     }
+    cell_state[currentpos.fi][currentpos.se] = 0;
     tranche.push_back(currentpos);
 
     //cout << max_time_spent << endl;
 
+
+    const double failure_max_time_proportion = 0.001;
+    const double resetfactor = 0.99;
+    long long first_failure = 0;
     while (calc_time < max_time_spent) {
 
 
@@ -395,30 +479,39 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
         pii s = sample(minjumpdist, maxjumpdist);
         s = offsets[s.fi][s.se];
         pii probe = {currentpos.fi + s.fi, currentpos.se + s.se};
-        calc_time++;
+        calc_time += 3;
         if (insiderect(probe, {{1, 1}, {size.fi, size.se}}) && cell_state[probe.fi][probe.se]) {
             calc_time += 8;
+            if (cell_allow_farjump[probe.fi][probe.se] >= farjump_threshold) {
+                if (rand() % 128 < 64) {
+                    goto reject;
+                }
+            }
             if (isConflictFree(probe, carry_forward, tranche, cooldown, minjumpdist)) {
                 tranche.pb(probe);
                 //last_sites.pb(probe);
                 //mark_keepout(probe, iteration);
                 cell_state[probe.fi][probe.se] = 0;
                 currentpos = probe;
+                first_failure = calc_time; // Reset watchdog timer
                 if ((int)tranche.size() % 1000 == 0)
                     cout << ((int)tranche.size()) << endl;
                 //cout << currentpos.fi << " " << currentpos.se << endl;
             }
         }
-        /*if (tries >= maxtries) {
-            int rollbackits = ceil(iteration * (1-resetfactor));
-            iteration -= rollbackits;
-            rep(i,0,rollbackits) {
-                tocover[steps.back().fi][steps.back().se] = 1;
-                steps.pop_back();
+
+        reject:
+
+        // If for a long enough time no step could be made, reset by
+        if ((calc_time-first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
+            int rollbackits = ceil(((int)tranche.size()) * (1-resetfactor));
+            for (int i = 0; i < rollbackits; i++) {
+                cell_state[tranche.back().fi][tranche.back().se] = 1;
+                tranche.pop_back();
             }
-            currentpos = steps.back();
-            tries = 0;
-        }*/
+            currentpos = tranche.back();
+            first_failure = calc_time; // Reset watchdog timer
+        }
 
 
 
@@ -431,8 +524,10 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
 
 const int minjumpdist = 20;
 const int maxjumpdist = 300;
+//const int minjumpdist = 4;
+//const int maxjumpdist = 50;
 const int farjumpdepth = 3;
-const int timeout = 5;
+const int timeout = 10;
 
 int main() {
     FIO;

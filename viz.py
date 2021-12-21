@@ -20,6 +20,8 @@ for line in stdin:
 		xs.append(int(line[1])-1)
 		ys.append(int(line[0])-1)
 image = np.array(image)
+print(image.shape)
 #plt.plot(xs, ys)#, marker = '.')
 plt.imshow(image)
+plt.savefig('./prev_viz.png')
 plt.show()

@@ -28,27 +28,16 @@ using vi = vector<int>;
 using vvi = vector<vector<int>>;
 // using oset = tree<int,null_type,less<int>,rb_tree_tag,tree_order_statistics_node_update>;
 
-const int maxsize = 4096;
-const int maxjumpdist = 300;
-const int minjumpdist = 20;
-const int timeout = 5;
-const int farjumpdepth = 3;
+const int MAXSIZE = 4096;
+
+// temp
+vector<vector<pii>> offsets;
 
 /*
 int tocover[maxsize][maxsize];
 int canfarjump[maxsize][maxsize];
-vector<vector<pii>> offsets;
 
-void build_offsets(int min, int max) {
-    rep(i,min,max+1) {
-        vector<pii> vec;
-        rep(j,-i,i+1) vec.pb({-i, j}), vec.pb({i, j});
-        rep(j,-i+1,i) vec.pb({j, -i}), vec.pb({j, i});
-        offsets.pb(vec);
-        //cout << vec.size() << " ";
-    }
-    //cout << endl;
-}
+
 
 void build_canfarjump() {
     const int thresh = (2*farjumpdepth+1)*(2*farjumpdepth+1);
@@ -97,6 +86,56 @@ bool isallowed(pii point, int iteration, vector<pii>& steps) {
 }
 */
 
+pii sample(int minjumpdist, int maxjumpdist) {
+    //int dist = rand() % (maxjumpdist - minjumpdist + 1);
+    int dist = minjumpdist;
+    //cout << offsets[dist].size() << " " << ((dist+minjumpdist)*8) << endl;
+    return {dist, rand() % ((dist+minjumpdist)*8)};
+}
+
+bool insiderect(pii point, pair<pii, pii> rect) {
+    return point.fi >= rect.fi.fi && point.fi <= rect.se.fi && point.se >= rect.fi.se && point.se <= rect.se.se;
+}
+
+void build_offsets(int min, int max) {
+    rep(i,min,max+1) {
+        vector<pii> vec;
+        rep(j,-i,i+1) vec.pb({-i, j}), vec.pb({i, j});
+        rep(j,-i+1,i) vec.pb({j, -i}), vec.pb({j, i});
+        offsets.pb(vec);
+        //cout << vec.size() << " ";
+    }
+    //cout << endl;
+}
+
+
+
+
+
+
+
+
+
+bool isConflictFree(pair<int, int>& point, vector<pair<int, int>>& carry_forward,
+                    vector<pair<int, int>>& cooling_down_points, int cooldown, const int mindist) {
+    int a = point.fi;
+    int b = point.se;
+    for (int idx = (int)cooling_down_points.size()-1; idx >= 0 && cooldown > 0; idx--, --cooldown) {
+        int c = cooling_down_points[idx].fi;
+        int d = cooling_down_points[idx].se;
+        if ((a-c)*(a-c) + (b-d)*(b-d) < mindist * mindist)
+            return false;
+    }
+    for (int idx = (int)carry_forward.size()-1; idx >= 0 && cooldown > 0; idx--, --cooldown) {
+        int c = carry_forward[idx].fi;
+        int d = carry_forward[idx].se;
+        if ((a-c)*(a-c) + (b-d)*(b-d) < mindist * mindist)
+            return false;
+    }
+    return true;
+}
+
+
 struct Statistics {
     int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
     int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
@@ -104,14 +143,16 @@ struct Statistics {
     double phase_one_avg_tranche_size;
 };
 
+
 class Board {
 private:
-    int cell_state[maxsize][maxsize];
-    int cell_allow_farjump[maxsize][maxsize];
+    int cell_state[MAXSIZE][MAXSIZE];
+    int cell_allow_farjump[MAXSIZE][MAXSIZE];
     pair<int, int> size;
     int farjump_threshold;
 public:
-    int minjumpdist, maxjumpdist, farjumpdepth;
+    int minjumpdist, maxjumpdist, farjumpdepth, cooldown;
+    vector<pair<int, int>> solution;
     Statistics statistics;
 private:
     void _build_farjump();
@@ -124,12 +165,16 @@ private:
     vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
     vector<pair<int, int>> _build_tranche_phase_two(vector<pair<int, int>>& carry_forward);
 public:
-    Board(int minjumpdist, int maxjumpdist, int farjumpdepth);
-    vector<pair<int, int>> solve();
+    Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);
+    void solve();
+    void print_solution_path();
+    void print_board();
 };
 
 
-Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), farjumpdepth(fjd) {
+Board::Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time)
+        : minjumpdist(minjump), maxjumpdist(maxjump), farjumpdepth(farjump_borderdist), cooldown(cooldown_time) {
+
     // Read board size
     cin >> size.fi >> size.se;
 
@@ -156,8 +201,44 @@ Board::Board(int min, int max, int fjd) : minjumpdist(min), maxjumpdist(max), fa
 }
 
 
-vector<pair<int, int>> Board::solve() {
-    return {};
+void Board::solve() {
+    solution.clear();
+
+    // Phase one
+    vector<pair<int, int>> carry_forward; // List of cells that need to cool down first
+    int num_tranches = 0;
+    while (true) {
+        cout << "Tranche number " << (++num_tranches) << endl;
+
+        vector<pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
+        solution.insert(solution.end(), tranche.begin(), tranche.end());
+        
+        // Remember the last 'cooldown' many cells
+        carry_forward.clear();
+        for (int idx = max(0, (int)solution.size()-cooldown); idx < (int)solution.size(); idx++) {
+            carry_forward.push_back(solution[idx]);
+        }
+    }
+}
+
+
+void Board::print_solution_path() {
+    cout << "Path:" << endl;
+    for (int i = 0; i < (int)solution.size(); i++) {
+        cout << solution[i].fi << " " << solution[i].se << endl;
+    }
+}
+
+
+void Board::print_board() {
+    cout << "Remaining:" << endl;
+    for (int i = 1; i <= size.fi; i++) {
+        for (int j = 1; j <= size.se; j++) {
+            cout << cell_state[i][j] << " ";
+            //cout << (tocover[i][j] + canfarjump[i][j]) << " ";
+        }
+        cout << endl;
+    }
 }
 
 
@@ -165,8 +246,8 @@ void Board::_build_farjump() {
     statistics.initial_num_targets_longjump = 0;
 
     farjump_threshold = (2*farjumpdepth+1)*(2*farjumpdepth+1);
-    for (int y = farjumpdepth; y < maxsize - farjumpdepth; y++) {
-        vi colcount(maxsize, 0);
+    for (int y = farjumpdepth; y < MAXSIZE - farjumpdepth; y++) {
+        vi colcount(MAXSIZE, 0);
         int var = 0;
         for (int i = 0; i <= farjumpdepth*2; i++) {
             for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
@@ -177,7 +258,7 @@ void Board::_build_farjump() {
         cell_allow_farjump[farjumpdepth][y] = var;
         if (var >= farjump_threshold)
             statistics.initial_num_targets_longjump++;
-        for (int x = farjumpdepth+1; x < maxsize - farjumpdepth; x++) {
+        for (int x = farjumpdepth+1; x < MAXSIZE - farjumpdepth; x++) {
             for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
                 colcount[x+farjumpdepth] += cell_state[x+farjumpdepth][y+j];
             }
@@ -271,18 +352,87 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
     vector<pair<int, int>> tranche;
     long long calc_time = 0;
     const long long max_time_spent = _compute_max_time_phase_one();
-    while (calc_time < max_time_spent) {
-        /* code */
+    //const double resetfactor = 0.99;
+    
+    pii currentpos;
+    for (int i = 1; i <= size.fi; i++) {
+        for (int j = 1; j <= size.se; j++) {
+            if (cell_state[i][j]) {
+                currentpos = {i+1,j+1};
+                break;
+            }
+        }
     }
+    tranche.push_back(currentpos);
+
+    while (calc_time < max_time_spent) {
+
+
+
+        pii s = sample(minjumpdist, maxjumpdist);
+        s = offsets[s.fi][s.se];
+        pii probe = {currentpos.fi + s.fi, currentpos.se + s.se};
+        calc_time++;
+        if (insiderect(probe, {{1, 1}, {size.fi, size.se}}) && cell_state[probe.fi][probe.se]) {
+            calc_time += 8;
+            if (isConflictFree(probe, carry_forward, tranche, cooldown, minjumpdist)) {
+                tranche.pb(probe);
+                //last_sites.pb(probe);
+                //mark_keepout(probe, iteration);
+                cell_state[probe.fi][probe.se] = 0;
+                currentpos = probe;
+                if ((int)tranche.size() % 1000 == 0)
+                    cout << ((int)tranche.size()) << endl;
+                //cout << currentpos.fi << " " << currentpos.se << endl;
+            }
+        }
+        /*if (tries >= maxtries) {
+            int rollbackits = ceil(iteration * (1-resetfactor));
+            iteration -= rollbackits;
+            rep(i,0,rollbackits) {
+                tocover[steps.back().fi][steps.back().se] = 1;
+                steps.pop_back();
+            }
+            currentpos = steps.back();
+            tries = 0;
+        }*/
+
+
+
+    }
+
     _update_stats_phase_one_tranche(tranche);
     return tranche;
 }
 
 
+const int minjumpdist = 20;
+const int maxjumpdist = 300;
+const int farjumpdepth = 3;
+const int timeout = 5;
+
 int main() {
     FIO;
 
-    /*
+
+    // temp
+    build_offsets(minjumpdist, maxjumpdist);
+
+
+    Board* board = new Board(minjumpdist, maxjumpdist, farjumpdepth, timeout);
+    board->solve();
+
+    board->print_solution_path();
+    board->print_board();
+
+    return 0;
+}
+
+
+/*
+int main() {
+    FIO;
+
     int sx, sy;
     cin >> sx >> sy;
 
@@ -301,7 +451,6 @@ int main() {
     double fillratio = countones / (double)(sx * sy);
     build_offsets(minjumpdist, maxjumpdist);
     build_canfarjump();
-    */
 
     //cout << countones << " " << countzeros << " " << fillratio << endl;
 
@@ -313,7 +462,6 @@ int main() {
     // }
     // return 0;
 
-    /*
     deque<pii> last_sites;
     vector<vector<pii>> tranches;
     vector<pii> steps;
@@ -361,9 +509,7 @@ int main() {
             tries = 0;
         }
     }
-    */
 
-    /*
     cout << endl;
     cout << endl;
     cout << endl;
@@ -383,7 +529,7 @@ int main() {
     }
 
     //vector<cluster> clusters;
-    */
 
     return 0;
 }
+*/

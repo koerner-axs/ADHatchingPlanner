@@ -2,10 +2,19 @@
 #pragma GCC optimize("unroll-loops")
 #pragma GCC target("avx2")
 
-#include <bits/stdc++.h>
+// #include <bits/stdc++.h>
 // #include <stdio.h>
 // #include <ext/pb_ds/assoc_container.hpp>
 // #include <ext/pb_ds/tree_policy.hpp>
+
+#include <vector>
+#include <fstream>
+#include <iostream>
+#include <crtdbg.h>
+#include <math.h>
+#include <string>
+#include <set>
+//#include <stdio.h>
 
 using namespace std;
 // using namespace __gnu_pbds;
@@ -27,6 +36,11 @@ using pll = pair<ll, ll>;
 using vi = vector<int>;
 using vvi = vector<vector<int>>;
 // using oset = tree<int,null_type,less<int>,rb_tree_tag,tree_order_statistics_node_update>;
+
+
+// Custom includes
+#include "TinyPngOut-cpp/TinyPngOut.hpp"
+
 
 const int MAXSIZE = 4096;
 
@@ -113,7 +127,27 @@ void build_offsets(int min, int max) {
 
 
 
+void save_matrix_as_png(vector<vector<int>> matrix, pair<int, int> size, string filename) {
+    uint8_t* array = new uint8_t[size.fi*size.se*3];
+    for (int x = 0; x < size.fi; x++) {
+        for (int y = 0; y < size.se; y++) {
+            uint8_t t = (uint8_t)matrix[x][y] * 0xFF;
+            for (int i = 0; i < 3; i++) {
+                array[x*size.fi*3+y*3+i] = t;
+            }
+        }
+    }
 
+    try {
+		ofstream file;
+        file.open(filename, ios::binary);
+		TinyPngOut pngout((uint32_t)size.fi, (uint32_t)size.se, file);
+		pngout.write(array, (size_t)(size.fi*size.se));
+	} catch (const char *msg) {
+		cout << "Failed to save matrix to file " << filename << endl;
+        exit(1);
+	}
+}
 
 
 bool isConflictFree(pair<int, int>& point, vector<pair<int, int>>& carry_forward,
@@ -146,8 +180,8 @@ struct Statistics {
 
 class Board {
 private:
-    int cell_state[MAXSIZE][MAXSIZE];
-    int cell_allow_farjump[MAXSIZE][MAXSIZE];
+    vector<vector<int>> cell_state;
+    vector<vector<int>> cell_allow_farjump;
     pair<int, int> size;
     int farjump_threshold;
     int current_phase;
@@ -166,19 +200,23 @@ private:
     vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
     vector<pair<int, int>> _build_tranche_phase_two(vector<pair<int, int>>& carry_forward);
 public:
-    Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);
+    Board(istream& input);
+    void initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);
     void solve();
     void print_solution_path();
     void print_board();
     void print_statistics();
+    void save_board(string filename);
+    static Board* read_board_from_file(string filename);
 };
 
 
-Board::Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time)
-        : minjumpdist(minjump), maxjumpdist(maxjump), farjumpdepth(farjump_borderdist), cooldown(cooldown_time) {
+Board::Board(istream& input) {
+    cell_state = vector<vector<int>>(MAXSIZE, vector<int>(MAXSIZE, 0));
+    cell_allow_farjump = vector<vector<int>>(MAXSIZE, vector<int>(MAXSIZE, 0));
 
     // Read board size
-    cin >> size.fi >> size.se;
+    input >> size.fi >> size.se;
 
     _init_statistics();
 
@@ -187,7 +225,8 @@ Board::Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time
     for (int i = 1; i <= size.fi; i++) {
         for (int j = 1; j <= size.se; j++) {
             char c;
-            cin >> c;
+            input >> c;
+            _ASSERT(c == '0' || c == '1');
             if (c == '1') {
                 cell_state[i][j] = 1;
                 statistics.initial_num_targets++;
@@ -195,6 +234,14 @@ Board::Board(int minjump, int maxjump, int farjump_borderdist, int cooldown_time
         }
     }
     statistics.current_num_targets = statistics.initial_num_targets;
+}
+
+
+void Board::initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time) {
+    minjumpdist = minjump;
+    maxjumpdist = maxjump;
+    farjumpdepth = farjump_borderdist;
+    cooldown = cooldown_time;
 
     // Calculate the number of target cells in a neighborhood of given size for all cells.
     // If all cells in a neighborhood are target cells, we assume the center cell to be an
@@ -207,6 +254,10 @@ void Board::solve() {
     solution.clear();
     current_phase = 1;
 
+
+    save_board("./dbg/p0.png");
+
+
     // Phase one
     vector<pair<int, int>> carry_forward; // List of cells that need to cool down first
     int num_tranches = 0;
@@ -218,9 +269,8 @@ void Board::solve() {
         solution.insert(solution.end(), tranche.begin(), tranche.end());
 
 
-        //print_solution_path();
-        //print_board();
-        //exit(0);
+        string name = string("./dbg/p1tranche") + to_string(num_tranches) + ".png";
+        save_board(name);
 
         
         // Remember the last 'cooldown' many cells
@@ -271,6 +321,26 @@ void Board::print_statistics() {
     cout << "Of which " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets, area) << " cells are targets" << endl;
     cout << "   of which " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets_longjump, statistics.current_num_targets) << " are eligible for a long jump, whereas " << PRINT_NUM_AND_PERCENTOF(statistics.current_num_targets_nonlongjump, statistics.current_num_targets) << " are not" << endl;
     cout << "to be extended" << endl;
+}
+
+
+void Board::save_board(string filename) {
+    save_matrix_as_png(cell_state, size, filename);
+}
+
+
+Board* Board::read_board_from_file(string filename) {
+    Board* board = nullptr;
+    ifstream file;
+    file.open(filename, ios::in);
+    if (file.is_open()) {
+        board = new Board(file);
+        file.close();
+    } else {
+        cout << "Could not open file " << filename << endl;
+        exit(1);
+    }
+    return board;
 }
 
 
@@ -351,6 +421,7 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
 
     // Update longjump and nonlongjump statistics
     for (pair<int, int> p : tranche) {
+        statistics.current_num_targets--;
         if (cell_allow_farjump[p.fi][p.se] >= farjump_threshold) {
             statistics.current_num_targets_longjump--;
         } else {
@@ -358,8 +429,7 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
         }
     }
 
-    /*
-    set<pair<int, int>> s;
+    /*set<pair<int, int>> s;
     pair<int, int> x;
     for (pair<int, int> p : tranche) {
         if (s.count(p)) {
@@ -392,8 +462,7 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
         cout << "Longjump targets mismatched " << statistics.current_num_targets_longjump << " compared to " << lj << endl;
         cout << "Nonlongjump targets mismatched " << statistics.current_num_targets_nonlongjump << " compared to " << nlj << endl;
         exit(0);
-    }
-    */
+    }*/
 }
 
 
@@ -482,11 +551,11 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
         calc_time += 3;
         if (insiderect(probe, {{1, 1}, {size.fi, size.se}}) && cell_state[probe.fi][probe.se]) {
             calc_time += 8;
-            if (cell_allow_farjump[probe.fi][probe.se] >= farjump_threshold) {
-                if (rand() % 128 < 64) {
+            /*if (cell_allow_farjump[probe.fi][probe.se] >= farjump_threshold) {
+                if (rand() % 128 < 96) {
                     goto reject;
                 }
-            }
+            }*/
             if (isConflictFree(probe, carry_forward, tranche, cooldown, minjumpdist)) {
                 tranche.pb(probe);
                 //last_sites.pb(probe);
@@ -494,8 +563,8 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
                 cell_state[probe.fi][probe.se] = 0;
                 currentpos = probe;
                 first_failure = calc_time; // Reset watchdog timer
-                if ((int)tranche.size() % 1000 == 0)
-                    cout << ((int)tranche.size()) << endl;
+                //if ((int)tranche.size() % 1000 == 0)
+                //    cout << ((int)tranche.size()) << endl;
                 //cout << currentpos.fi << " " << currentpos.se << endl;
             }
         }
@@ -537,11 +606,13 @@ int main() {
     build_offsets(minjumpdist, maxjumpdist);
 
 
-    Board* board = new Board(minjumpdist, maxjumpdist, farjumpdepth, timeout);
+    Board* board = Board::read_board_from_file("./inputs/large.txt");
+    board->initialize(minjumpdist, maxjumpdist, farjumpdepth, timeout);
     board->solve();
 
-    board->print_solution_path();
-    board->print_board();
+    board->save_board("./last_output.png");
+    //board->print_solution_path();
+    //board->print_board();
 
     return 0;
 }

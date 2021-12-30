@@ -1,125 +1,47 @@
-#pragma GCC optimize("O3")
-#pragma GCC optimize("unroll-loops")
+//#pragma GCC optimize("O3")
+//#pragma GCC optimize("unroll-loops")
 #pragma GCC target("avx2")
 
-// #include <bits/stdc++.h>
-// #include <stdio.h>
-// #include <ext/pb_ds/assoc_container.hpp>
-// #include <ext/pb_ds/tree_policy.hpp>
-
-#include <vector>
 #include <fstream>
-#include <iostream>
 #include <crtdbg.h>
 #include <math.h>
-#include <string>
-#include <set>
-//#include <stdio.h>
 
-using namespace std;
-// using namespace __gnu_pbds;
+#include "solver.hpp"
+#include "TinyPngOut-cpp/TinyPngOut.hpp"
 
-#define FIO ios_base::sync_with_stdio(false); cin.tie(0);
-#define mp make_pair
-#define pb push_back
+
 #define fi first
 #define se second
-#define rep(i, a, b) for(int i = a; i < (b); i++)
-#define sz(x) (int)(x).size()
-#define all(x) (x).begin(), (x).end()
+//#define rep(i, a, b) for(int i = a; i < (b); i++)
 
-using ll = long long;
-using ld = long double;
-using str = string;
-using pii = pair<int, int>;
-using pll = pair<ll, ll>;
-using vi = vector<int>;
-using vvi = vector<vector<int>>;
-// using oset = tree<int,null_type,less<int>,rb_tree_tag,tree_order_statistics_node_update>;
-
-
-// Custom includes
-#include "TinyPngOut-cpp/TinyPngOut.hpp"
+#define cout std::cout
+#define endl std::endl
 
 
 const int MAXSIZE = 4096;
 
+
 // temp
-vector<vector<pii>> offsets;
+std::vector<std::vector<std::pair<int, int>>> offsets;
 
-/*
-int tocover[maxsize][maxsize];
-int canfarjump[maxsize][maxsize];
-
-
-
-void build_canfarjump() {
-    const int thresh = (2*farjumpdepth+1)*(2*farjumpdepth+1);
-    for (int y = farjumpdepth; y < maxsize - farjumpdepth; y++) {
-        vi colcount(maxsize, 0);
-        int var = 0;
-        for (int i = 0; i <= farjumpdepth*2; i++) {
-            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[i] += tocover[i][y+j];
-            }
-            var += colcount[i];
-        }
-        canfarjump[farjumpdepth][y] = var;// >= thresh;
-        for (int x = farjumpdepth+1; x < maxsize - farjumpdepth; x++) {
-            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[x+farjumpdepth] += tocover[x+farjumpdepth][y+j];
-            }
-            var += colcount[x+farjumpdepth] - colcount[x-farjumpdepth-1];
-            canfarjump[x][y] = var;// >= thresh;
-        }
-    }
-}
-
-pii sample() {
-    //int dist = rand() % (maxjumpdist - minjumpdist + 1);
-    int dist = minjumpdist;
-    //cout << offsets[dist].size() << " " << ((dist+minjumpdist)*8) << endl;
-    return {dist, rand() % ((dist+minjumpdist)*8)};
-}
-
-bool insiderect(pii point, pair<pii, pii> rect) {
-    return point.fi >= rect.fi.fi && point.fi <= rect.se.fi && point.se >= rect.fi.se && point.se <= rect.se.se;
-}
-
-bool isallowed(pii point, int iteration, vector<pii>& steps) {
-    for (int offset = 1; offset <= timeout; offset++) {
-        int idx = (int)steps.size() - offset;
-        if (idx < 0)
-            break;
-        pii p = steps[idx];
-        //cout << idx << " " << p.fi << " " << p.se << endl;
-        if (insiderect(point, {{p.fi - minjumpdist + 1, p.se - minjumpdist + 1}, {p.fi + minjumpdist - 1, p.se + minjumpdist - 1}}))
-            return false;
-    }
-    return true;
-}
-*/
-
-pii sample(int minjumpdist, int maxjumpdist) {
+std::pair<int, int> sample(int minjumpdist, int maxjumpdist) {
     int dist = rand() % (maxjumpdist - minjumpdist + 1);
     //int dist = minjumpdist;
     //cout << offsets[dist].size() << " " << ((dist+minjumpdist)*8) << endl;
     return {dist, rand() % ((dist+minjumpdist)*8)};
 }
 
-bool insiderect(pii point, pair<pii, pii> rect) {
+bool insiderect(std::pair<int, int> point, std::pair<std::pair<int, int>, std::pair<int, int>> rect) {
     return point.fi >= rect.fi.fi && point.fi <= rect.se.fi && point.se >= rect.fi.se && point.se <= rect.se.se;
 }
 
 void build_offsets(int min, int max) {
-    rep(i,min,max+1) {
-        vector<pii> vec;
-        rep(j,-i,i+1) vec.pb({-i, j}), vec.pb({i, j});
-        rep(j,-i+1,i) vec.pb({j, -i}), vec.pb({j, i});
-        offsets.pb(vec);
-        //cout << vec.size() << " ";
+    for (int i = min; i <= max; i++) {
+        std::vector<std::pair<int, int>> vec;
+        for (int j = -i; j <= i; j++) vec.push_back({-i, j}), vec.push_back({i, j});
+        for (int j = -i + 1; j < i; j++) vec.push_back({j, -i}), vec.push_back({j, i});
+        offsets.push_back(vec);
     }
-    //cout << endl;
 }
 
 
@@ -127,11 +49,12 @@ void build_offsets(int min, int max) {
 
 
 
-void save_matrix_as_png(vector<vector<int>> matrix, pair<int, int> size, string filename) {
+void save_matrix_as_png(std::vector<std::vector<int>> matrix, std::pair<int, int> size, std::pair<int, int> offsets,
+                        std::string filename, std::uint8_t multiplier = 1) {
     uint8_t* array = new uint8_t[size.fi*size.se*3];
     for (int x = 0; x < size.fi; x++) {
         for (int y = 0; y < size.se; y++) {
-            uint8_t t = (uint8_t)matrix[x][y] * 0xFF;
+            uint8_t t = (uint8_t)matrix[x+offsets.fi][y+offsets.se] * multiplier;
             for (int i = 0; i < 3; i++) {
                 array[x*size.fi*3+y*3+i] = t;
             }
@@ -139,8 +62,8 @@ void save_matrix_as_png(vector<vector<int>> matrix, pair<int, int> size, string 
     }
 
     try {
-		ofstream file;
-        file.open(filename, ios::binary);
+		std::ofstream file;
+        file.open(filename, std::ios::binary);
 		TinyPngOut pngout((uint32_t)size.fi, (uint32_t)size.se, file);
 		pngout.write(array, (size_t)(size.fi*size.se));
 	} catch (const char *msg) {
@@ -150,8 +73,8 @@ void save_matrix_as_png(vector<vector<int>> matrix, pair<int, int> size, string 
 }
 
 
-bool isConflictFree(pair<int, int>& point, vector<pair<int, int>>& carry_forward,
-                    vector<pair<int, int>>& cooling_down_points, int cooldown, const int mindist) {
+bool isConflictFree(std::pair<int, int>& point, std::vector<std::pair<int, int>>& carry_forward,
+                    std::vector<std::pair<int, int>>& cooling_down_points, int cooldown, const int mindist) {
     int a = point.fi;
     int b = point.se;
     for (int idx = (int)cooling_down_points.size()-1; idx >= 0 && cooldown > 0; idx--, --cooldown) {
@@ -170,80 +93,15 @@ bool isConflictFree(pair<int, int>& point, vector<pair<int, int>>& carry_forward
 }
 
 
-struct TileEntry {
-    int borderness;
-    int posX, posY;
-public:
-    static bool comparison_func(TileEntry& lhs, TileEntry& rhs) {
-        if (lhs.borderness != rhs.borderness) {
-            return lhs.borderness < rhs.borderness;
-        }
-        if (lhs.posX != rhs.posX) {
-            return lhs.posX < rhs.posX;
-        }
-        return lhs.posY < rhs.posY;
-    }
-};
 
 
-class SpatialPartition {
-private:
-    vector<vector<set<TileEntry, TileEntry::comparison_func, vector<TileEntry>>>> data;
-    pair<int, int> size;
-    int tile_size;
-public:
-    SpatialPartition(pair<int, int> board_size, int tile_size);
-    void build_partition(vector<vector<int>>* cell_state);
-    int sample_in_range(pair<int, int>& out, int mindist, int maxdist, int maxiter);
-    void update(pair<int, int> cell, bool remove);
-};
 
 
-struct Statistics {
-    int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
-    int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
-    int phase_one_num_tranches, phase_one_num_tranche_disappointees, phase_one_num_tranches_in_avg;
-    double phase_one_avg_tranche_size;
-};
 
 
-class Board {
-private:
-    vector<vector<int>> cell_state;
-    vector<vector<int>> cell_allow_farjump;
-    pair<int, int> size;
-    int farjump_threshold;
-    int current_phase;
-public:
-    int minjumpdist, maxjumpdist, farjumpdepth, cooldown;
-    vector<pair<int, int>> solution;
-    Statistics statistics;
-    SpatialPartition* partition;
-private:
-    void _build_farjump();
-    void _init_statistics();
-    void _declare_end_of_phase(int phase_to_end);
-    void _update_stats_phase_one_tranche(vector<pair<int, int>>& tranche);
-    void _update_stats_phase_two_tranche(vector<pair<int, int>>& tranche);
-    long long _compute_max_time_phase_one();
-    long long _compute_max_time_phase_two();
-    vector<pair<int, int>> _build_tranche_phase_one(vector<pair<int, int>>& carry_forward);
-    vector<pair<int, int>> _build_tranche_phase_two(vector<pair<int, int>>& carry_forward);
-public:
-    Board(istream& input);
-    void initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);
-    void solve();
-    void print_solution_path();
-    void print_board();
-    void print_statistics();
-    void save_board(string filename);
-    static Board* read_board_from_file(string filename);
-};
-
-
-Board::Board(istream& input) {
-    cell_state = vector<vector<int>>(MAXSIZE, vector<int>(MAXSIZE, 0));
-    cell_allow_farjump = vector<vector<int>>(MAXSIZE, vector<int>(MAXSIZE, 0));
+Board::Board(std::istream& input) {
+    cell_state = std::vector<std::vector<int>>(MAXSIZE, std::vector<int>(MAXSIZE, 0));
+    cell_allow_farjump = std::vector<std::vector<int>>(MAXSIZE, std::vector<int>(MAXSIZE, 0));
 
     // Read board size
     input >> size.fi >> size.se;
@@ -289,23 +147,23 @@ void Board::solve() {
 
 
     // Phase one
-    vector<pair<int, int>> carry_forward; // List of cells that need to cool down first
+    std::vector<std::pair<int, int>> carry_forward; // List of cells that need to cool down first
     int num_tranches = 0;
     while (current_phase == 1) {
         cout << "Tranche number " << (++num_tranches) << endl;
         print_statistics();
 
-        vector<pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
+        std::vector<std::pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
         solution.insert(solution.end(), tranche.begin(), tranche.end());
 
 
-        string name = string("./dbg/p1tranche") + to_string(num_tranches) + ".png";
+        std::string name = std::string("./dbg/p1tranche") + std::to_string(num_tranches) + ".png";
         save_board(name);
 
         
         // Remember the last 'cooldown' many cells
         carry_forward.clear();
-        for (int idx = max(0, (int)solution.size()-cooldown); idx < (int)solution.size(); idx++) {
+        for (int idx = std::max(0, (int)solution.size()-cooldown); idx < (int)solution.size(); idx++) {
             carry_forward.push_back(solution[idx]);
         }
     }
@@ -354,15 +212,15 @@ void Board::print_statistics() {
 }
 
 
-void Board::save_board(string filename) {
-    save_matrix_as_png(cell_state, size, filename);
+void Board::save_board(std::string filename) {
+    save_matrix_as_png(cell_state, size, {1, 1}, filename, 0xFF);
 }
 
 
-Board* Board::read_board_from_file(string filename) {
+Board* Board::read_board_from_file(std::string filename) {
     Board* board = nullptr;
-    ifstream file;
-    file.open(filename, ios::in);
+    std::ifstream file;
+    file.open(filename, std::ios::in);
     if (file.is_open()) {
         board = new Board(file);
         file.close();
@@ -376,28 +234,44 @@ Board* Board::read_board_from_file(string filename) {
 
 void Board::_build_farjump() {
     statistics.initial_num_targets_longjump = 0;
-
     farjump_threshold = (2*farjumpdepth+1)*(2*farjumpdepth+1);
-    for (int y = farjumpdepth; y < MAXSIZE - farjumpdepth; y++) {
-        vi colcount(MAXSIZE, 0);
-        int var = 0;
-        for (int i = 0; i <= farjumpdepth*2; i++) {
-            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[i] += cell_state[i][y+j];
-            }
-            var += colcount[i];
+    
+    std::pair<int, int> presum_size = {size.fi+2*farjumpdepth+1, size.se+2*farjumpdepth+1};
+    std::vector<std::vector<long long>> presum(presum_size.fi, std::vector<long long>(presum_size.se, 0));
+
+    // Build prefix sums
+    for (int x = 1; x <= size.fi; x++) {
+        long long carry = 0;
+        int y = 1;
+        for (; y <= size.se; y++) {
+            carry += cell_state[x][y];
+            presum[x+farjumpdepth][y+farjumpdepth] = carry;
         }
-        cell_allow_farjump[farjumpdepth][y] = var;
-        if (var >= farjump_threshold)
+        // Fill array to the end
+        for (y += farjumpdepth; y < presum_size.se; y++) {
+            presum[x+farjumpdepth][y] = carry;
+        }
+    }
+
+    // Compute 2D range queries
+    for (int y = 1; y <= size.se; y++) {
+        long long val = 0;
+        for (int i = 1; i <= 2*farjumpdepth+1; i++) {
+            val += presum[i][y+2*farjumpdepth] - presum[i][y-1];
+        }
+        cell_allow_farjump[1][y] = val;
+        if (val >= farjump_threshold) {
             statistics.initial_num_targets_longjump++;
-        for (int x = farjumpdepth+1; x < MAXSIZE - farjumpdepth; x++) {
-            for (int j = -farjumpdepth; j <= farjumpdepth; j++) {
-                colcount[x+farjumpdepth] += cell_state[x+farjumpdepth][y+j];
-            }
-            var += colcount[x+farjumpdepth] - colcount[x-farjumpdepth-1];
-            cell_allow_farjump[x][y] = var;
-            if (var >= farjump_threshold)
+        }
+
+        for (int x = 2; x <= size.fi; x++) {
+            val -= presum[x-1][y+2*farjumpdepth] - presum[x-1][y-1];
+            val += presum[x+2*farjumpdepth][y+2*farjumpdepth] - presum[x+2*farjumpdepth][y-1];
+
+            cell_allow_farjump[x][y] = val;
+            if (val >= farjump_threshold) {
                 statistics.initial_num_targets_longjump++;
+            }
         }
     }
 
@@ -424,7 +298,7 @@ void Board::_declare_end_of_phase(int phase_to_end) {
 }
 
 
-void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
+void Board::_update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tranche) {
     statistics.phase_one_num_tranches++;
 
     // Check if new tranche is of underwhelming size compared to running average. If so add one to number of consecutive disappointing
@@ -443,14 +317,14 @@ void Board::_update_stats_phase_one_tranche(vector<pair<int, int>>& tranche) {
     }
 
     if (!did_disappoint) { 
-        statistics.phase_one_num_tranche_disappointees = max(0, statistics.phase_one_num_tranche_disappointees - 1);
+        statistics.phase_one_num_tranche_disappointees = std::max(0, statistics.phase_one_num_tranche_disappointees - 1);
         statistics.phase_one_avg_tranche_size = statistics.phase_one_avg_tranche_size * statistics.phase_one_num_tranches_in_avg + (double)tranche.size();
         statistics.phase_one_avg_tranche_size /= (double)(statistics.phase_one_num_tranches_in_avg + 1);
         statistics.phase_one_num_tranches_in_avg++;
     }
 
     // Update longjump and nonlongjump statistics
-    for (pair<int, int> p : tranche) {
+    for (std::pair<int, int> p : tranche) {
         statistics.current_num_targets--;
         if (cell_allow_farjump[p.fi][p.se] >= farjump_threshold) {
             statistics.current_num_targets_longjump--;
@@ -512,9 +386,9 @@ long long Board::_compute_max_time_phase_one() {
     
     if (statistics.phase_one_num_tranches_in_avg >= 5) {
         if (proportion_border_covered < 0.7) {
-            return min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell;
+            return std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell;
         } else if (proportion_border_covered < 0.9) {
-            return min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell * 4;
+            return std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell * 4;
         } else {
             return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
         }
@@ -529,12 +403,12 @@ long long Board::_compute_max_time_phase_one() {
 }
 
 
-vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& carry_forward) {
-    vector<pair<int, int>> tranche;
+std::vector<std::pair<int, int>> Board::_build_tranche_phase_one(std::vector<std::pair<int, int>>& carry_forward) {
+    std::vector<std::pair<int, int>> tranche;
     long long calc_time = 0;
     const long long max_time_spent = _compute_max_time_phase_one();
     
-    pii currentpos = {-1, -1};
+    std::pair<int, int> currentpos = {-1, -1};
     /*for (int i = 1; i <= size.fi; i++) {
         for (int j = 1; j <= size.se; j++) {
             if (cell_state[i][j]) {
@@ -575,9 +449,9 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
 
 
 
-        pii s = sample(minjumpdist, maxjumpdist);
+        std::pair<int, int> s = sample(minjumpdist, maxjumpdist);
         s = offsets[s.fi][s.se];
-        pii probe = {currentpos.fi + s.fi, currentpos.se + s.se};
+        std::pair<int, int> probe = {currentpos.fi + s.fi, currentpos.se + s.se};
         calc_time += 3;
         if (insiderect(probe, {{1, 1}, {size.fi, size.se}}) && cell_state[probe.fi][probe.se]) {
             calc_time += 8;
@@ -587,7 +461,7 @@ vector<pair<int, int>> Board::_build_tranche_phase_one(vector<pair<int, int>>& c
                 }
             }*/
             if (isConflictFree(probe, carry_forward, tranche, cooldown, minjumpdist)) {
-                tranche.pb(probe);
+                tranche.push_back(probe);
                 //last_sites.pb(probe);
                 //mark_keepout(probe, iteration);
                 cell_state[probe.fi][probe.se] = 0;
@@ -629,7 +503,8 @@ const int farjumpdepth = 3;
 const int timeout = 10;
 
 int main() {
-    FIO;
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(0);
 
 
     // temp

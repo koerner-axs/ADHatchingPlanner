@@ -170,6 +170,35 @@ bool isConflictFree(pair<int, int>& point, vector<pair<int, int>>& carry_forward
 }
 
 
+struct TileEntry {
+    int borderness;
+    int posX, posY;
+public:
+    static bool comparison_func(TileEntry& lhs, TileEntry& rhs) {
+        if (lhs.borderness != rhs.borderness) {
+            return lhs.borderness < rhs.borderness;
+        }
+        if (lhs.posX != rhs.posX) {
+            return lhs.posX < rhs.posX;
+        }
+        return lhs.posY < rhs.posY;
+    }
+};
+
+
+class SpatialPartition {
+private:
+    vector<vector<set<TileEntry, TileEntry::comparison_func, vector<TileEntry>>>> data;
+    pair<int, int> size;
+    int tile_size;
+public:
+    SpatialPartition(pair<int, int> board_size, int tile_size);
+    void build_partition(vector<vector<int>>* cell_state);
+    int sample_in_range(pair<int, int>& out, int mindist, int maxdist, int maxiter);
+    void update(pair<int, int> cell, bool remove);
+};
+
+
 struct Statistics {
     int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
     int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
@@ -189,6 +218,7 @@ public:
     int minjumpdist, maxjumpdist, farjumpdepth, cooldown;
     vector<pair<int, int>> solution;
     Statistics statistics;
+    SpatialPartition* partition;
 private:
     void _build_farjump();
     void _init_statistics();

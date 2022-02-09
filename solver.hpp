@@ -29,19 +29,19 @@ public:
     }
 };
 
+typedef std::set<TileEntry, decltype(TileEntry::comparison_func)*> Tile;
 
 class Board;
-
 class SpatialPartition {
 private:
-    std::vector<std::vector<std::set<TileEntry, decltype(TileEntry::comparison_func)*>>> data;
+    std::vector<std::vector<Tile>> data;
     std::pair<int, int> board_size;
     std::pair<int, int> size;
     int stride;
     Board* board;
 private:
     void _convert_to_internal(std::pair<int, int> cell, std::pair<int, int>& part_cell, std::pair<int, int>& cell_offset);
-    long long _find_allowed_optimum_in_tile(std::set<TileEntry>& tile, const int min_poss_borderness, std::pair<int, int>& current_best_cell, int& current_best_borderness);
+    long long _find_allowed_optimum_in_tile(Tile& tile, const int min_poss_borderness, std::pair<int, int>& current_best_cell, int& current_best_borderness);
 public:
     SpatialPartition(Board* board, int tile_size);
     long long sample_in_range(std::pair<int, int> cell, TileEntry& out, int mindist, int maxdist, long long maxiter);
@@ -81,8 +81,8 @@ private:
     void _update_stats_phase_two_tranche();
     long long _compute_max_time_phase_one();
     long long _compute_max_time_phase_two();
-    std::vector<std::pair<int, int>> _build_tranche_phase_one();
-    std::vector<std::pair<int, int>> _build_tranche_phase_two();
+    void _build_tranche_phase_one();
+    void _build_tranche_phase_two();
 public:
     Board(std::istream& input);
     void initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);

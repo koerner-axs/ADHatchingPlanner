@@ -419,8 +419,7 @@ long long Board::_compute_max_time_phase_one() {
 }
 
 
-std::vector<std::pair<int, int>> Board::_build_tranche_phase_one() {
-    std::vector<std::pair<int, int>> tranche;
+void Board::_build_tranche_phase_one() {
     long long calc_time = 0;
     const long long max_time_spent = _compute_max_time_phase_one();
     
@@ -454,7 +453,7 @@ std::vector<std::pair<int, int>> Board::_build_tranche_phase_one() {
         row = (row + 1) % size.fi;
     }
     cell_state[currentpos.fi][currentpos.se] = 0;
-    tranche.push_back(currentpos);
+    current_tranche.push_back(currentpos);
 
     //cout << max_time_spent << endl;
 
@@ -495,32 +494,32 @@ std::vector<std::pair<int, int>> Board::_build_tranche_phase_one() {
         TileEntry entry = {-1, -1, -1};
         calc_time += partition->sample_in_range(currentpos, entry, minjumpdist, maxjumpdist, (max_time_spent - calc_time));
 
-
+        cout << entry.posX << " " << entry.posY << " " << entry.borderness << endl;
         if (entry.posX == -1 || (calc_time - first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
             // No viable jump target was found (in time)
-            int rollbackits = ceil(((int)tranche.size()) * (1 - resetfactor));
+            int rollbackits = ceil(((int)current_tranche.size()) * (1 - resetfactor));
             for (int i = 0; i < rollbackits; i++) {
-                cell_state[tranche.back().fi][tranche.back().se] = 1;
-                partition->insert(tranche.back());
-                tranche.pop_back();
+                cell_state[current_tranche.back().fi][current_tranche.back().se] = 1;
+                partition->insert(current_tranche.back());
+                current_tranche.pop_back();
             }
-            currentpos = tranche.back();
+            currentpos = current_tranche.back();
             first_failure = calc_time; // Reset watchdog timer
 
         } else {
-            tranche.push_back(entry.pos_pair());
+            current_tranche.push_back(entry.pos_pair());
             cell_state[entry.posX][entry.posY] = 0;
             currentpos = entry.pos_pair();
             partition->remove(entry);
             first_failure = calc_time; // Reset watchdog timer
         }
 
-
+        if ((int)current_tranche.size() % 1000 == 0)
+            cout << ((int)current_tranche.size()) << endl;
 
     }
 
     _update_stats_phase_one_tranche();
-    return tranche;
 }
 
 

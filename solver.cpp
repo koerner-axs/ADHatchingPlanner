@@ -1,6 +1,6 @@
 //#pragma GCC optimize("O3")
 //#pragma GCC optimize("unroll-loops")
-#pragma GCC target("avx2")
+//#pragma GCC target("avx2")
 
 #include <fstream>
 #include <crtdbg.h>
@@ -8,14 +8,6 @@
 
 #include "solver.hpp"
 #include "TinyPngOut-cpp/TinyPngOut.hpp"
-
-
-#define fi first
-#define se second
-//#define rep(i, a, b) for(int i = a; i < (b); i++)
-
-#define cout std::cout
-#define endl std::endl
 
 
 const int MAXSIZE = 4096;
@@ -77,7 +69,7 @@ bool isConflictFree(std::pair<int, int>& point, std::vector<std::pair<int, int>>
                     std::vector<std::pair<int, int>>& cooling_down_points, int cooldown, const int mindist) {
     int a = point.fi;
     int b = point.se;
-    for (int idx = (int)cooling_down_points.size()-1; idx >= 0 && cooldown > 0; idx--, --cooldown) {
+    for (int idx = (int)cooling_down_points.size()-1; idx >= 0 && cooldown != 0; idx--, --cooldown) {
         int c = cooling_down_points[idx].fi;
         int d = cooling_down_points[idx].se;
         if ((a-c)*(a-c) + (b-d)*(b-d) < mindist * mindist)
@@ -101,7 +93,7 @@ bool isConflictFree(std::pair<int, int>& point, std::vector<std::pair<int, int>>
 
 Board::Board(std::istream& input) {
     cell_state = std::vector<std::vector<int>>(MAXSIZE, std::vector<int>(MAXSIZE, 0));
-    cell_allow_farjump = std::vector<std::vector<int>>(MAXSIZE, std::vector<int>(MAXSIZE, 0));
+    cell_borderness = std::vector<std::vector<int>>(MAXSIZE, std::vector<int>(MAXSIZE, 0));
 
     // Read board size
     input >> size.fi >> size.se;
@@ -134,7 +126,9 @@ void Board::initialize(int minjump, int maxjump, int farjump_borderdist, int coo
     // Calculate the number of target cells in a neighborhood of given size for all cells.
     // If all cells in a neighborhood are target cells, we assume the center cell to be an
     // acceptable target for a long jump.
-    _build_farjump();
+    _build_borderness();
+
+    _build_spatial_partition();
 }
 
 
@@ -147,25 +141,17 @@ void Board::solve() {
 
 
     // Phase one
-    std::vector<std::pair<int, int>> carry_forward; // List of cells that need to cool down first
     int num_tranches = 0;
     while (current_phase == 1) {
         cout << "Tranche number " << (++num_tranches) << endl;
         print_statistics();
 
-        std::vector<std::pair<int, int>> tranche = _build_tranche_phase_one(carry_forward);
-        solution.insert(solution.end(), tranche.begin(), tranche.end());
+        _build_tranche_phase_one();
+        solution.insert(solution.end(), current_tranche.begin(), current_tranche.end());
 
 
         std::string name = std::string("./dbg/p1tranche") + std::to_string(num_tranches) + ".png";
         save_board(name);
-
-        
-        // Remember the last 'cooldown' many cells
-        carry_forward.clear();
-        for (int idx = std::max(0, (int)solution.size()-cooldown); idx < (int)solution.size(); idx++) {
-            carry_forward.push_back(solution[idx]);
-        }
     }
 
     // Phase two
@@ -195,11 +181,6 @@ void Board::print_board() {
     }
 }
 
-/*
-int initial_num_targets, initial_num_targets_longjump, initial_num_targets_nonlongjump;
-    int current_num_targets, current_num_targets_longjump, current_num_targets_nonlongjump;
-    int phase_one_num_tranches, phase_one_num_tranche_disappointees, phase_one_num_tranches_in_avg;
-    double phase_one_avg_tranche_size;*/
 
 #define PRINT_NUM_AND_PERCENTOF(a,b) a << " (" << /*setprecision(2) <<*/ (100 * (a / (double)b)) << "%)"
 void Board::print_statistics() {
@@ -214,6 +195,28 @@ void Board::print_statistics() {
 
 void Board::save_board(std::string filename) {
     save_matrix_as_png(cell_state, size, {1, 1}, filename, 0xFF);
+}
+
+
+bool Board::query_conflict_free(const std::pair<int, int>& probe) {
+    int a = probe.first;
+    int b = probe.second;
+    int num_checks = cooldown;
+    for (int idx = (int)current_tranche.size() - 1; idx >= 0 && num_checks != 0; idx--, num_checks--) {
+        int c = current_tranche[idx].first;
+        int d = current_tranche[idx].second;
+        if ((a - c) * (a - c) + (b - d) * (b - d) < minjumpdist * minjumpdist) {
+            return false;
+        }
+    }
+    for (int idx = (int)solution.size() - 1; idx >= 0 && num_checks != 0; idx--, num_checks--) {
+        int c = solution[idx].first;
+        int d = solution[idx].second;
+        if ((a - c) * (a - c) + (b - d) * (b - d) < minjumpdist * minjumpdist) {
+            return false;
+        }
+    }
+    return true;
 }
 
 
@@ -232,10 +235,10 @@ Board* Board::read_board_from_file(std::string filename) {
 }
 
 
-void Board::_build_farjump() {
+void Board::_build_borderness() {
     statistics.initial_num_targets_longjump = 0;
     farjump_threshold = (2*farjumpdepth+1)*(2*farjumpdepth+1);
-    
+
     std::pair<int, int> presum_size = {size.fi+2*farjumpdepth+1, size.se+2*farjumpdepth+1};
     std::vector<std::vector<long long>> presum(presum_size.fi, std::vector<long long>(presum_size.se, 0));
 
@@ -259,7 +262,7 @@ void Board::_build_farjump() {
         for (int i = 1; i <= 2*farjumpdepth+1; i++) {
             val += presum[i][y+2*farjumpdepth] - presum[i][y-1];
         }
-        cell_allow_farjump[1][y] = val;
+        cell_borderness[1][y] = val;
         if (val >= farjump_threshold) {
             statistics.initial_num_targets_longjump++;
         }
@@ -268,7 +271,7 @@ void Board::_build_farjump() {
             val -= presum[x-1][y+2*farjumpdepth] - presum[x-1][y-1];
             val += presum[x+2*farjumpdepth][y+2*farjumpdepth] - presum[x+2*farjumpdepth][y-1];
 
-            cell_allow_farjump[x][y] = val;
+            cell_borderness[x][y] = val;
             if (val >= farjump_threshold) {
                 statistics.initial_num_targets_longjump++;
             }
@@ -278,6 +281,19 @@ void Board::_build_farjump() {
     statistics.initial_num_targets_nonlongjump = statistics.initial_num_targets - statistics.initial_num_targets_longjump;
     statistics.current_num_targets_longjump = statistics.initial_num_targets_longjump;
     statistics.current_num_targets_nonlongjump = statistics.initial_num_targets_nonlongjump;
+}
+
+
+void Board::_build_spatial_partition() {
+    partition = new SpatialPartition(this, 16);
+
+    for (int x = 1; x <= size.fi; x++) {
+        for (int y = 1; y <= size.se; y++) {
+            if (cell_state[x][y] != 0) {
+                partition->insert({x, y});
+            }
+        }
+    }
 }
 
 
@@ -298,7 +314,7 @@ void Board::_declare_end_of_phase(int phase_to_end) {
 }
 
 
-void Board::_update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tranche) {
+void Board::_update_stats_phase_one_tranche() {
     statistics.phase_one_num_tranches++;
 
     // Check if new tranche is of underwhelming size compared to running average. If so add one to number of consecutive disappointing
@@ -306,7 +322,7 @@ void Board::_update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tr
     bool did_disappoint = false;
     if (statistics.phase_one_num_tranches_in_avg > 5) { // Need to have a min number of components so that average is stable enough
         const double min_no_disappoint = 0.4; // Constant depends on the variability to be expected
-        if ((double)tranche.size() < min_no_disappoint * statistics.phase_one_avg_tranche_size) {
+        if ((double)current_tranche.size() < min_no_disappoint * statistics.phase_one_avg_tranche_size) {
             did_disappoint = true;
             statistics.phase_one_num_tranche_disappointees++;
         }
@@ -318,15 +334,15 @@ void Board::_update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tr
 
     if (!did_disappoint) { 
         statistics.phase_one_num_tranche_disappointees = std::max(0, statistics.phase_one_num_tranche_disappointees - 1);
-        statistics.phase_one_avg_tranche_size = statistics.phase_one_avg_tranche_size * statistics.phase_one_num_tranches_in_avg + (double)tranche.size();
+        statistics.phase_one_avg_tranche_size = statistics.phase_one_avg_tranche_size * statistics.phase_one_num_tranches_in_avg + (double)current_tranche.size();
         statistics.phase_one_avg_tranche_size /= (double)(statistics.phase_one_num_tranches_in_avg + 1);
         statistics.phase_one_num_tranches_in_avg++;
     }
 
     // Update longjump and nonlongjump statistics
-    for (std::pair<int, int> p : tranche) {
+    for (std::pair<int, int> p : current_tranche) {
         statistics.current_num_targets--;
-        if (cell_allow_farjump[p.fi][p.se] >= farjump_threshold) {
+        if (cell_borderness[p.fi][p.se] >= farjump_threshold) {
             statistics.current_num_targets_longjump--;
         } else {
             statistics.current_num_targets_nonlongjump--;
@@ -372,7 +388,7 @@ void Board::_update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tr
 
 long long Board::_compute_max_time_phase_one() {
     //long long base_time_per_cell = 2 * ((2*maxjumpdist+1)*(2*maxjumpdist+1) - (2*minjumpdist+1)*(2*minjumpdist+1));
-    long long base_time_per_cell = 4 * (8*minjumpdist - 4);
+    long long base_time_per_cell = 4 * (8*(long long)minjumpdist - 4);
     double proportion_border_covered = 1.0 - (statistics.current_num_targets_nonlongjump / (double)statistics.initial_num_targets_nonlongjump);
     
     //cout << base_time_per_cell << " " << proportion_border_covered << endl;
@@ -403,11 +419,12 @@ long long Board::_compute_max_time_phase_one() {
 }
 
 
-std::vector<std::pair<int, int>> Board::_build_tranche_phase_one(std::vector<std::pair<int, int>>& carry_forward) {
+std::vector<std::pair<int, int>> Board::_build_tranche_phase_one() {
     std::vector<std::pair<int, int>> tranche;
     long long calc_time = 0;
     const long long max_time_spent = _compute_max_time_phase_one();
     
+    // Pick starting position for this tranche
     std::pair<int, int> currentpos = {-1, -1};
     /*for (int i = 1; i <= size.fi; i++) {
         for (int j = 1; j <= size.se; j++) {
@@ -448,18 +465,13 @@ std::vector<std::pair<int, int>> Board::_build_tranche_phase_one(std::vector<std
     while (calc_time < max_time_spent) {
 
 
-
+        /*
         std::pair<int, int> s = sample(minjumpdist, maxjumpdist);
         s = offsets[s.fi][s.se];
         std::pair<int, int> probe = {currentpos.fi + s.fi, currentpos.se + s.se};
         calc_time += 3;
         if (insiderect(probe, {{1, 1}, {size.fi, size.se}}) && cell_state[probe.fi][probe.se]) {
             calc_time += 8;
-            /*if (cell_allow_farjump[probe.fi][probe.se] >= farjump_threshold) {
-                if (rand() % 128 < 96) {
-                    goto reject;
-                }
-            }*/
             if (isConflictFree(probe, carry_forward, tranche, cooldown, minjumpdist)) {
                 tranche.push_back(probe);
                 //last_sites.pb(probe);
@@ -473,16 +485,33 @@ std::vector<std::pair<int, int>> Board::_build_tranche_phase_one(std::vector<std
             }
         }
 
-        reject:
+        reject:*/
 
-        // If for a long enough time no step could be made, reset by
-        if ((calc_time-first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
-            int rollbackits = ceil(((int)tranche.size()) * (1-resetfactor));
+
+
+
+
+
+        TileEntry entry = {-1, -1, -1};
+        calc_time += partition->sample_in_range(currentpos, entry, minjumpdist, maxjumpdist, (max_time_spent - calc_time));
+
+
+        if (entry.posX == -1 || (calc_time - first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
+            // No viable jump target was found (in time)
+            int rollbackits = ceil(((int)tranche.size()) * (1 - resetfactor));
             for (int i = 0; i < rollbackits; i++) {
                 cell_state[tranche.back().fi][tranche.back().se] = 1;
+                partition->insert(tranche.back());
                 tranche.pop_back();
             }
             currentpos = tranche.back();
+            first_failure = calc_time; // Reset watchdog timer
+
+        } else {
+            tranche.push_back(entry.pos_pair());
+            cell_state[entry.posX][entry.posY] = 0;
+            currentpos = entry.pos_pair();
+            partition->remove(entry);
             first_failure = calc_time; // Reset watchdog timer
         }
 
@@ -490,7 +519,7 @@ std::vector<std::pair<int, int>> Board::_build_tranche_phase_one(std::vector<std
 
     }
 
-    _update_stats_phase_one_tranche(tranche);
+    _update_stats_phase_one_tranche();
     return tranche;
 }
 

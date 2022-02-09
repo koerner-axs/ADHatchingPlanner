@@ -4,10 +4,17 @@
 #include <string>
 
 
+#define fi first
+#define se second
+#define cout std::cout
+#define endl std::endl
+
+
 struct TileEntry {
     int borderness;
     int posX, posY;
 public:
+    TileEntry(int borderness, int posX, int posY) : borderness(borderness), posX(posX), posY(posY) {}
     static bool comparison_func(const TileEntry& lhs, const TileEntry& rhs) {
         if (lhs.borderness != rhs.borderness) {
             return lhs.borderness < rhs.borderness;
@@ -17,19 +24,31 @@ public:
         }
         return lhs.posY < rhs.posY;
     }
+    std::pair<int, int> pos_pair() {
+        return {posX, posY};
+    }
 };
 
+
+class Board;
 
 class SpatialPartition {
 private:
     std::vector<std::vector<std::set<TileEntry, decltype(TileEntry::comparison_func)*>>> data;
+    std::pair<int, int> board_size;
     std::pair<int, int> size;
-    int tile_size;
+    int stride;
+    Board* board;
+private:
+    void _convert_to_internal(std::pair<int, int> cell, std::pair<int, int>& part_cell, std::pair<int, int>& cell_offset);
+    long long _find_allowed_optimum_in_tile(std::set<TileEntry>& tile, const int min_poss_borderness, std::pair<int, int>& current_best_cell, int& current_best_borderness);
 public:
-    SpatialPartition(std::pair<int, int> board_size, int tile_size);
-    void build_partition(std::vector<std::vector<int>>* cell_state);
-    int sample_in_range(std::pair<int, int>& out, int mindist, int maxdist, int maxiter);
-    void update(std::pair<int, int> cell, bool remove);
+    SpatialPartition(Board* board, int tile_size);
+    long long sample_in_range(std::pair<int, int> cell, TileEntry& out, int mindist, int maxdist, long long maxiter);
+    void insert(std::pair<int, int> point);
+    void insert(TileEntry entry);
+    void remove(std::pair<int, int> point);
+    void remove(TileEntry entry);
 };
 
 
@@ -42,27 +61,28 @@ struct Statistics {
 
 
 class Board {
-private:
+public:
     std::vector<std::vector<int>> cell_state;
-    std::vector<std::vector<int>> cell_allow_farjump;
-    std::pair<int, int> size;
+    std::vector<std::vector<int>> cell_borderness;
+    std::vector<std::pair<int, int>> current_tranche;
     int farjump_threshold;
     int current_phase;
-public:
+    std::pair<int, int> size;
     int minjumpdist, maxjumpdist, farjumpdepth, cooldown;
     std::vector<std::pair<int, int>> solution;
     Statistics statistics;
     SpatialPartition* partition;
 private:
-    void _build_farjump();
+    void _build_borderness();
+    void _build_spatial_partition();
     void _init_statistics();
     void _declare_end_of_phase(int phase_to_end);
-    void _update_stats_phase_one_tranche(std::vector<std::pair<int, int>>& tranche);
-    void _update_stats_phase_two_tranche(std::vector<std::pair<int, int>>& tranche);
+    void _update_stats_phase_one_tranche();
+    void _update_stats_phase_two_tranche();
     long long _compute_max_time_phase_one();
     long long _compute_max_time_phase_two();
-    std::vector<std::pair<int, int>> _build_tranche_phase_one(std::vector<std::pair<int, int>>& carry_forward);
-    std::vector<std::pair<int, int>> _build_tranche_phase_two(std::vector<std::pair<int, int>>& carry_forward);
+    std::vector<std::pair<int, int>> _build_tranche_phase_one();
+    std::vector<std::pair<int, int>> _build_tranche_phase_two();
 public:
     Board(std::istream& input);
     void initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time);
@@ -71,5 +91,6 @@ public:
     void print_board();
     void print_statistics();
     void save_board(std::string filename);
+    bool query_conflict_free(const std::pair<int, int>& probe);
     static Board* read_board_from_file(std::string filename);
 };

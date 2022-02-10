@@ -2,12 +2,21 @@
 #include <set>
 #include <iostream>
 #include <string>
+#include <chrono>
 
 
 #define fi first
 #define se second
 #define cout std::cout
 #define endl std::endl
+
+#ifdef _DEBUG
+#define _DBG_TIME_PROCEDURE_A(x) cout << "enter procedure " << x << endl; auto time_measurement_start = std::chrono::steady_clock::now();
+#define _DBG_TIME_PROCEDURE_B(x) auto time_measurement_end = std::chrono::steady_clock::now(); cout << "leave procedure " << x << " after " << (std::chrono::duration_cast<std::chrono::milliseconds>(time_measurement_end - time_measurement_start).count()) << " ms" << endl;
+#else
+#define _DBG_TIME_PROCEDURE_A(x)
+#define _DBG_TIME_PROCEDURE_B(x)
+#endif
 
 
 struct TileEntry {

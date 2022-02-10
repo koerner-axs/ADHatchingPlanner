@@ -118,6 +118,8 @@ Board::Board(std::istream& input) {
 
 
 void Board::initialize(int minjump, int maxjump, int farjump_borderdist, int cooldown_time) {
+    _DBG_TIME_PROCEDURE_A("Board::initialize")
+
     minjumpdist = minjump;
     maxjumpdist = maxjump;
     farjumpdepth = farjump_borderdist;
@@ -129,6 +131,8 @@ void Board::initialize(int minjump, int maxjump, int farjump_borderdist, int coo
     _build_borderness();
 
     _build_spatial_partition();
+
+    _DBG_TIME_PROCEDURE_B("Board::initialize")
 }
 
 
@@ -236,6 +240,8 @@ Board* Board::read_board_from_file(std::string filename) {
 
 
 void Board::_build_borderness() {
+    _DBG_TIME_PROCEDURE_A("_build_borderness")
+
     statistics.initial_num_targets_longjump = 0;
     farjump_threshold = (2*farjumpdepth+1)*(2*farjumpdepth+1);
 
@@ -281,10 +287,14 @@ void Board::_build_borderness() {
     statistics.initial_num_targets_nonlongjump = statistics.initial_num_targets - statistics.initial_num_targets_longjump;
     statistics.current_num_targets_longjump = statistics.initial_num_targets_longjump;
     statistics.current_num_targets_nonlongjump = statistics.initial_num_targets_nonlongjump;
+
+    _DBG_TIME_PROCEDURE_B("_build_borderness")
 }
 
 
 void Board::_build_spatial_partition() {
+    _DBG_TIME_PROCEDURE_A("_build_spatial_partition")
+
     partition = new SpatialPartition(this, 16);
 
     for (int x = 1; x <= size.fi; x++) {
@@ -294,6 +304,8 @@ void Board::_build_spatial_partition() {
             }
         }
     }
+
+    _DBG_TIME_PROCEDURE_B("_build_spatial_partition")
 }
 
 
@@ -489,14 +501,16 @@ void Board::_build_tranche_phase_one() {
 
 
 
-
+        //cout << calc_time << " " << max_time_spent << endl;
 
         TileEntry entry = {-1, -1, -1};
-        calc_time += partition->sample_in_range(currentpos, entry, minjumpdist, maxjumpdist, (max_time_spent - calc_time));
+        long long time_spent = partition->sample_in_range(currentpos, entry, minjumpdist, maxjumpdist, (max_time_spent - calc_time));
+        calc_time += time_spent;
+        //cout << time_spent << " units" << endl;
 
-        cout << entry.posX << " " << entry.posY << " " << entry.borderness << endl;
         if (entry.posX == -1 || (calc_time - first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
             // No viable jump target was found (in time)
+            cout << "Rolling back!" << endl;
             int rollbackits = ceil(((int)current_tranche.size()) * (1 - resetfactor));
             for (int i = 0; i < rollbackits; i++) {
                 cell_state[current_tranche.back().fi][current_tranche.back().se] = 1;
@@ -507,6 +521,7 @@ void Board::_build_tranche_phase_one() {
             first_failure = calc_time; // Reset watchdog timer
 
         } else {
+            //cout << entry.posX << " " << entry.posY << " " << entry.borderness << endl;
             current_tranche.push_back(entry.pos_pair());
             cell_state[entry.posX][entry.posY] = 0;
             currentpos = entry.pos_pair();

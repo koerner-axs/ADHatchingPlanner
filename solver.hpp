@@ -25,15 +25,15 @@ struct TileEntry {
 public:
     TileEntry(int borderness, int posX, int posY) : borderness(borderness), posX(posX), posY(posY) {}
     static bool comparison_func(const TileEntry& lhs, const TileEntry& rhs) {
-        if (lhs.borderness != rhs.borderness) {
+        /*if (lhs.borderness != rhs.borderness) {
             return lhs.borderness < rhs.borderness;
-        }
+        }*/
         if (lhs.posX != rhs.posX) {
             return lhs.posX < rhs.posX;
         }
         return lhs.posY < rhs.posY;
     }
-    std::pair<int, int> pos_pair() {
+    std::pair<int, int> pos_pair() const {
         return {posX, posY};
     }
 };
@@ -42,7 +42,7 @@ typedef std::set<TileEntry, decltype(TileEntry::comparison_func)*> Tile;
 
 class Board;
 class SpatialPartition {
-private:
+public:
     std::vector<std::vector<Tile>> data;
     std::pair<int, int> board_size;
     std::pair<int, int> size;
@@ -50,7 +50,7 @@ private:
     Board* board;
 private:
     void _convert_to_internal(std::pair<int, int> cell, std::pair<int, int>& part_cell, std::pair<int, int>& cell_offset);
-    long long _find_allowed_optimum_in_tile(Tile& tile, const int min_poss_borderness, std::pair<int, int>& current_best_cell, int& current_best_borderness);
+    long long _find_allowed_in_tile(Tile& tile, std::vector<std::pair<int, int>>& allowed_targets, const int min_poss_borderness, std::pair<int, int>& current_best_cell, int& current_best_borderness);
 public:
     SpatialPartition(Board* board, int tile_size);
     long long sample_in_range(std::pair<int, int> cell, TileEntry& out, int mindist, int maxdist, long long maxiter);

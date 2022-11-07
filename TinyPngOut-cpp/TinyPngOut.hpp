@@ -267,7 +267,7 @@ void TinyPngOut::crc32(const uint8_t data[], size_t len) {
 	for (size_t i = 0; i < len; i++) {
 		for (int j = 0; j < 8; j++) {  // Inefficient bitwise implementation, instead of table-based
 			uint32_t bit = (crc ^ (data[i] >> j)) & 1;
-			crc = (crc >> 1) ^ ((-bit) & UINT32_C(0xEDB88320));
+			crc = (crc >> 1) ^ (((uint32_t)(-((int32_t)bit))) & UINT32_C(0xEDB88320));
 		}
 	}
 	crc = ~crc;

@@ -42,13 +42,41 @@ void build_offsets(int min, int max) {
 
 
 void save_matrix_as_png(std::vector<std::vector<int>> matrix, std::pair<int, int> size, std::pair<int, int> offsets,
-                        std::string filename, std::uint8_t multiplier = 1) {
-    uint8_t* array = new uint8_t[size.fi*size.se*3];
-    for (int x = 0; x < size.fi; x++) {
-        for (int y = 0; y < size.se; y++) {
-            uint8_t t = (uint8_t)matrix[x+offsets.fi][y+offsets.se] * multiplier;
-            for (int i = 0; i < 3; i++) {
-                array[x*size.fi*3+y*3+i] = t;
+    std::string filename, std::uint8_t multiplier = 1, std::pair<int, int> grid = { -1, -1 }) {
+
+    uint8_t* array = new uint8_t[size.fi * size.se * 3];
+    if (grid.first != -1) {
+        // Save the board with a red grid overlay.
+        for (int x = 0; x < size.fi; x++) {
+            if (x % grid.first == 0) {
+                for (int y = 0; y < size.second; y++) {
+                    array[x * size.first * 3 + y * 3] = 255;
+                    array[x * size.first * 3 + y * 3 + 1] = 0;
+                    array[x * size.first * 3 + y * 3 + 2] = 0;
+                }
+                continue;
+            }
+            for (int y = 0; y < size.se; y++) {
+                if (y % grid.second == 0) {
+                    array[x * size.first * 3 + y * 3] = 255;
+                    array[x * size.first * 3 + y * 3 + 1] = 0;
+                    array[x * size.first * 3 + y * 3 + 2] = 0;
+                    continue;
+                }
+                uint8_t t = (uint8_t)matrix[x + offsets.fi][y + offsets.se] * multiplier;
+                for (int i = 0; i < 3; i++) {
+                    array[x * size.fi * 3 + y * 3 + i] = t;
+                }
+            }
+        }
+    } else {
+        // Save the board without any grid helper.
+        for (int x = 0; x < size.fi; x++) {
+            for (int y = 0; y < size.se; y++) {
+                uint8_t t = (uint8_t)matrix[x + offsets.fi][y + offsets.se] * multiplier;
+                for (int i = 0; i < 3; i++) {
+                    array[x * size.fi * 3 + y * 3 + i] = t;
+                }
             }
         }
     }
@@ -82,6 +110,98 @@ bool isConflictFree(std::pair<int, int>& point, std::vector<std::pair<int, int>>
             return false;
     }
     return true;
+}
+
+
+bool check_matrix[MAXSIZE][MAXSIZE];
+void assure_tranche_viable(Board* board) {
+    // Print head of current tranche
+    cout << "Head of current tranche:";
+    for (int idx = 0; idx < std::min(5, (int)board->current_tranche.size()); idx++) {
+        cout << " (" << board->current_tranche[idx].first << " " << board->current_tranche[idx].second << ")";
+    }
+    cout << endl;
+
+    // Check cell state was cleared in board
+    for (auto p : board->solution) {
+        if (board->cell_state[p.first][p.second] != 0) {
+            cout << "Cell state invalid for cell in existing partial solution: (" << p.first << " " << p.second << ") cell was not 0" << endl;
+            goto fail;
+        }
+    }
+    for (auto p : board->current_tranche) {
+        if (board->cell_state[p.first][p.second] != 0) {
+            cout << "Cell state invalid for cell in current tranche: (" << p.first << " " << p.second << ") cell was not 0" << endl;
+            goto fail;
+        }
+    }
+
+    // Check no prior self/solution intersection
+    memset(check_matrix, 0, MAXSIZE * MAXSIZE);
+    for (int idx = 0; idx < (int)board->current_tranche.size(); idx++) {
+        auto p = board->current_tranche[idx];
+        if (check_matrix[p.first][p.second]) {
+            cout << "Repetition within current tranche: (" << p.first << " " << p.second << ") repeated at index " << idx << endl;
+            goto fail;
+        }
+        check_matrix[p.first][p.second] = true;
+    }
+    for (int idx = 0; idx < (int)board->solution.size(); idx++) {
+        auto p = board->solution[idx];
+        if (check_matrix[p.first][p.second]) {
+            cout << "Repetition between current tranche and existing partial solution: (" << p.first << " " << p.second << ") repeated at index " << idx << "in current tranche" << endl;
+            goto fail;
+        } else {
+            check_matrix[p.first][p.second] = true;
+        }
+    }
+
+    // Check distance requirements (only for current tranche, existing partial solution is expected to fulfill this or to be checked before this point)
+    {
+        std::pair<int, int> previous_point;
+        /*if (!board->solution.empty()) {
+            previous_point = board->solution.back();
+        } else {
+            previous_point = board->current_tranche.front();
+        }*/
+        previous_point = board->current_tranche.front();
+        for (int idx = 1; idx < (int)board->current_tranche.size(); idx++) {
+            auto p = board->current_tranche[idx];
+            int a = previous_point.first;
+            int b = previous_point.second;
+            int c = p.first;
+            int d = p.second;
+            // Check within maxjumpdist
+            if ((c - a) * (c - a) + (d - b) * (d - b) > board->maxjumpdist * board->maxjumpdist) {
+                cout << "The jump ENDING in the point with index " << idx << " of the current tranche violates maxjumpdist" << endl;
+                goto fail;
+            }
+            // Check geq minjumpdist
+            int num_checks = board->cooldown;
+            for (int ii = idx - 1; ii >= 0 && num_checks != 0; ii--, num_checks--) {
+                int a2 = board->current_tranche[ii].first;
+                int b2 = board->current_tranche[ii].second;
+                if ((a2 - c) * (a2 - c) + (b2 - d) * (b2 - d) < board->minjumpdist * board->minjumpdist) {
+                    cout << "The point with index " << idx << " of the current tranche violates minjumpdist (Source 1)" << endl;
+                    goto fail;
+                }
+            }
+            for (int ii = (int)board->solution.size() - 1; ii >= 0 && num_checks != 0; ii--, num_checks--) {
+                int a2 = board->solution[ii].first;
+                int b2 = board->solution[ii].second;
+                if ((a2 - c) * (a2 - c) + (b2 - d) * (b2 - d) < board->minjumpdist * board->minjumpdist) {
+                    cout << "The point with index " << idx << " of the current tranche violates minjumpdist (Source 2)" << endl;
+                    goto fail;
+                }
+            }
+            previous_point = p;
+        }
+    }
+
+    return;
+fail:
+    cout << std::flush;
+    exit(0);
 }
 
 
@@ -150,7 +270,14 @@ void Board::solve() {
         cout << "Tranche number " << (++num_tranches) << endl;
         print_statistics();
 
+        //if (num_tranches == 4)
+        //    break;
+
         _build_tranche_phase_one();
+#ifndef _DEBUG
+        assure_tranche_viable(this);
+#endif
+
         solution.insert(solution.end(), current_tranche.begin(), current_tranche.end());
 
 
@@ -198,13 +325,32 @@ void Board::print_statistics() {
 
 
 void Board::save_board(std::string filename) {
-    save_matrix_as_png(cell_state, size, {1, 1}, filename, 0xFF);
+    save_matrix_as_png(cell_state, size, { 1, 1 }, filename, 0xFF);// , { 16, 16 });
 }
 
 
 bool Board::query_conflict_free(const std::pair<int, int>& probe) {
     int a = probe.first;
     int b = probe.second;
+    if (cell_state[a][b] == 0) {
+        cout << "Cell already covered (" << a << " " << b << ")" << endl;
+        return 0;
+    }
+    // Check maxjumpdist
+    if (!current_tranche.empty()) {
+        int c = current_tranche.back().first;
+        int d = current_tranche.back().second;
+        if ((a - c) * (a - c) + (b - d) * (b - d) > maxjumpdist * maxjumpdist) {
+            return false;
+        }
+    } else if (!solution.empty()) {
+        int c = solution.back().first;
+        int d = solution.back().second;
+        if ((a - c) * (a - c) + (b - d) * (b - d) > maxjumpdist * maxjumpdist) {
+            return false;
+        }
+    }
+    // Check minjumpdist
     int num_checks = cooldown;
     for (int idx = (int)current_tranche.size() - 1; idx >= 0 && num_checks != 0; idx--, num_checks--) {
         int c = current_tranche[idx].first;
@@ -268,7 +414,7 @@ void Board::_build_borderness() {
         for (int i = 1; i <= 2*farjumpdepth+1; i++) {
             val += presum[i][y+2*farjumpdepth] - presum[i][y-1];
         }
-        cell_borderness[1][y] = val;
+        cell_borderness[1][y] = (int)val;
         if (val >= farjump_threshold) {
             statistics.initial_num_targets_longjump++;
         }
@@ -277,7 +423,7 @@ void Board::_build_borderness() {
             val -= presum[x-1][y+2*farjumpdepth] - presum[x-1][y-1];
             val += presum[x+2*farjumpdepth][y+2*farjumpdepth] - presum[x+2*farjumpdepth][y-1];
 
-            cell_borderness[x][y] = val;
+            cell_borderness[x][y] = (int)val;
             if (val >= farjump_threshold) {
                 statistics.initial_num_targets_longjump++;
             }
@@ -306,6 +452,15 @@ void Board::_build_spatial_partition() {
     }
 
     _DBG_TIME_PROCEDURE_B("_build_spatial_partition")
+
+    /*for (int x = 0; x < partition->size.first; x++) {
+        for (int y = 0; y < partition->size.second; y++) {
+            for (auto e : partition->data[x][y]) {
+                if (cell_borderness[e.posX][e.posY] != e.borderness)
+                    cout << "problem" << endl;
+            }
+        }
+    }*/
 }
 
 
@@ -410,13 +565,12 @@ long long Board::_compute_max_time_phase_one() {
     } else {
         return statistics.current_num_targets_nonlongjump * base_time_per_cell;
     }*/
-
     
     if (statistics.phase_one_num_tranches_in_avg >= 5) {
         if (proportion_border_covered < 0.7) {
-            return std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell;
+            return (long long)(std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell);
         } else if (proportion_border_covered < 0.9) {
-            return std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell * 4;
+            return (long long)(std::min(statistics.phase_one_avg_tranche_size, (double)statistics.current_num_targets_nonlongjump) * base_time_per_cell * 4);
         } else {
             return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
         }
@@ -427,13 +581,13 @@ long long Board::_compute_max_time_phase_one() {
             return statistics.current_num_targets_nonlongjump * base_time_per_cell * 8;
         }
     }
-    
 }
 
 
 void Board::_build_tranche_phase_one() {
+    current_tranche.clear();
     long long calc_time = 0;
-    const long long max_time_spent = _compute_max_time_phase_one();
+    const long long max_time_spent = _compute_max_time_phase_one() * 100;
     
     // Pick starting position for this tranche
     std::pair<int, int> currentpos = {-1, -1};
@@ -466,14 +620,17 @@ void Board::_build_tranche_phase_one() {
     }
     cell_state[currentpos.fi][currentpos.se] = 0;
     current_tranche.push_back(currentpos);
+    partition->remove(currentpos);
 
     //cout << max_time_spent << endl;
 
 
-    const double failure_max_time_proportion = 0.001;
-    const double resetfactor = 0.99;
+    const double failure_max_time_proportion = 0.01;
+    const double resetfactor = 0.999;
+    const int min_reset = 2;
+    const int max_reset = 2000;
     long long first_failure = 0;
-    while (calc_time < max_time_spent) {
+    while (calc_time < max_time_spent && (int)current_tranche.size() < 500000) {
 
 
         /*
@@ -508,10 +665,13 @@ void Board::_build_tranche_phase_one() {
         calc_time += time_spent;
         //cout << time_spent << " units" << endl;
 
-        if (entry.posX == -1 || (calc_time - first_failure) >= (long long)ceil(failure_max_time_proportion * max_time_spent)) {
+        if (entry.posX == -1) {
             // No viable jump target was found (in time)
-            cout << "Rolling back!" << endl;
-            int rollbackits = ceil(((int)current_tranche.size()) * (1 - resetfactor));
+            int rollbackits = (int)ceil(((int)current_tranche.size()) * (1 - resetfactor));
+            rollbackits = std::max(min_reset, rollbackits);
+            rollbackits = std::min((int)current_tranche.size() - 1, rollbackits);
+            rollbackits = std::min(max_reset, rollbackits);
+            cout << "Rolling back " << rollbackits << " many points!" << endl;
             for (int i = 0; i < rollbackits; i++) {
                 cell_state[current_tranche.back().fi][current_tranche.back().se] = 1;
                 partition->insert(current_tranche.back());
@@ -521,7 +681,7 @@ void Board::_build_tranche_phase_one() {
             first_failure = calc_time; // Reset watchdog timer
 
         } else {
-            //cout << entry.posX << " " << entry.posY << " " << entry.borderness << endl;
+            //cout << ((int)current_tranche.size() + 1) << " " << entry.posX << " " << entry.posY << " " << entry.borderness << endl;
             current_tranche.push_back(entry.pos_pair());
             cell_state[entry.posX][entry.posY] = 0;
             currentpos = entry.pos_pair();
@@ -529,8 +689,10 @@ void Board::_build_tranche_phase_one() {
             first_failure = calc_time; // Reset watchdog timer
         }
 
-        if ((int)current_tranche.size() % 1000 == 0)
+        if ((int)current_tranche.size() % 1000 == 0) {
             cout << ((int)current_tranche.size()) << endl;
+            //assure_tranche_viable(this->partition->board);
+        }
 
     }
 
@@ -554,7 +716,8 @@ int main() {
     build_offsets(minjumpdist, maxjumpdist);
 
 
-    Board* board = Board::read_board_from_file("./inputs/large.txt");
+    //Board* board = Board::read_board_from_file("./inputs/large.txt");
+    Board* board = Board::read_board_from_file("./inputs/white.txt");
     board->initialize(minjumpdist, maxjumpdist, farjumpdepth, timeout);
     board->solve();
 
@@ -564,109 +727,3 @@ int main() {
 
     return 0;
 }
-
-
-/*
-int main() {
-    FIO;
-
-    int sx, sy;
-    cin >> sx >> sy;
-
-    int countones = 0;
-    for (int i = 1; i <= sx; i++) {
-        for (int j = 1; j <= sy; j++) {
-            char c;
-            cin >> c;
-            if (c == '1') {
-                tocover[i][j] = 1;
-                countones++;
-            }
-        }
-    }
-    int countzeros = sx * sy - countones;
-    double fillratio = countones / (double)(sx * sy);
-    build_offsets(minjumpdist, maxjumpdist);
-    build_canfarjump();
-
-    //cout << countones << " " << countzeros << " " << fillratio << endl;
-
-    // rep(i,0,2) {
-    //     rep(j,0,offsets[i].size()) {
-    //         cout << "(" << offsets[i][j].fi << "," << offsets[i][j].se << ") ";
-    //     }
-    //     cout << endl;
-    // }
-    // return 0;
-
-    deque<pii> last_sites;
-    vector<vector<pii>> tranches;
-    vector<pii> steps;
-    pii currentpos;
-    rep(i,0,sx) {
-        rep(j,0,sy) {
-            if (tocover[i][j]) {
-                currentpos = {i+1,j+1};
-                last_sites.pb(currentpos);
-                break;
-            }
-        }
-    }
-    int iteration = 1;
-    int tries = 0;
-    int maxtries = ((2*maxjumpdist-1)*(2*maxjumpdist-1) - (2*minjumpdist-1)*(2*minjumpdist-1)) * 16;
-    const double resetfactor = 0.99;
-    while (iteration <= 200000) {//countones*0.85) {//countones) {
-        pii s = sample();
-        s = offsets[s.fi][s.se];
-        pii probe = {currentpos.fi + s.fi, currentpos.se + s.se};
-        tries++;
-        if (insiderect(probe, {{1, 1}, {sx, sy}}) && tocover[probe.fi][probe.se]) {
-            tries += 8;
-            if (isallowed(probe, iteration, steps)) {
-                steps.pb(probe);
-                //last_sites.pb(probe);
-                //mark_keepout(probe, iteration);
-                tocover[probe.fi][probe.se] = 0;
-                currentpos = probe;
-                iteration++;
-                tries = 0;
-                cout << iteration << endl;
-                //cout << currentpos.fi << " " << currentpos.se << endl;
-            }
-        }
-        if (tries >= maxtries) {
-            int rollbackits = ceil(iteration * (1-resetfactor));
-            iteration -= rollbackits;
-            rep(i,0,rollbackits) {
-                tocover[steps.back().fi][steps.back().se] = 1;
-                steps.pop_back();
-            }
-            currentpos = steps.back();
-            tries = 0;
-        }
-    }
-
-    cout << endl;
-    cout << endl;
-    cout << endl;
-
-    cout << "Path:" << endl;
-    rep(i,0,(int)steps.size()) {
-        cout << steps[i].fi << " " << steps[i].se << endl;
-    }
-
-    cout << "Remaining:" << endl;
-    rep(i,1,sx+1) {
-        rep(j,1,sy+1) {
-            cout << tocover[i][j] << " ";
-            //cout << (tocover[i][j] + canfarjump[i][j]) << " ";
-        }
-        cout << endl;
-    }
-
-    //vector<cluster> clusters;
-
-    return 0;
-}
-*/
